@@ -19,11 +19,17 @@
       width:min(58vw,520px);max-width:90vw;background:rgba(255,255,255,.08);color:var(--ui-text);
       border:1px solid var(--ui-border);outline:none;border-radius:10px;padding:10px 12px;font-size:16px
     }
-    .btn{appearance:none;border:none;border-radius:10px;cursor:pointer;padding:10px 12px;font-weight:600;font-size:14px;
-      background:rgba(255,255,255,.1);color:var(--ui-text);border:1px solid var(--ui-border);transition:transform .05s ease, background .2s}
-    .btn:active{transform:translateY(1px)} .btn.primary{background:var(--accent)}
+    .btn{
+      appearance:none;border:none;border-radius:10px;cursor:pointer;
+      padding:10px 12px;font-weight:600;font-size:14px;
+      background:rgba(255,255,255,.1);color:var(--ui-text);
+      border:1px solid var(--ui-border);transition:transform .05s ease, background .2s
+    }
+    .btn:active{transform:translateY(1px)}
+    .btn.primary{background:var(--accent)}
     .tabs{display:flex;gap:6px}
-    .tab{padding:8px 10px;border-radius:10px;border:1px solid var(--ui-border);background:rgba(255,255,255,.08);cursor:pointer;font-size:13px}
+    .tab{padding:8px 10px;border-radius:10px;border:1px solid var(--ui-border);
+      background:rgba(255,255,255,.08);cursor:pointer;font-size:13px}
     .tab.active{background:var(--accent);color:#fff}
     .bottom-bar{
       position:fixed;bottom:12px;left:50%;transform:translateX(-50%);
@@ -31,14 +37,28 @@
       background:var(--ui-bg);backdrop-filter: blur(8px);
       border:1px solid var(--ui-border);border-radius:12px;padding:8px 10px;z-index:10
     }
-    .note{position:fixed;right:12px;bottom:12px;font-size:12px;opacity:.75;background:var(--ui-bg);border:1px solid var(--ui-border);padding:6px 8px;border-radius:10px}
-    .spinner{width:18px;height:18px;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin 1s linear infinite;display:none}
-    @keyframes spin{to{transform:rotate(360deg)}} @media (max-width:640px){.controls input[type="text"]{width:58vw}.tabs{width:100%;justify-content:center}}
+    .note{
+      position:fixed;right:12px;bottom:12px;font-size:12px;opacity:.75;
+      background:var(--ui-bg);border:1px solid var(--ui-border);
+      padding:6px 8px;border-radius:10px
+    }
+    .diag{
+      position:fixed;left:12px;bottom:12px;font-size:12px;line-height:1.3;
+      background:#111;border:1px solid #444;color:#eee;padding:8px 10px;border-radius:10px;z-index:11;display:none
+    }
+    .spinner{width:18px;height:18px;border:3px solid rgba(255,255,255,.25);
+      border-top-color:#fff;border-radius:50%;animation:spin 1s linear infinite;display:none}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @media (max-width:640px){
+      .controls input[type="text"]{width:58vw}
+      .tabs{width:100%;justify-content:center}
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
 
+  <!-- Top controls -->
   <div class="controls">
     <form id="address-form" style="display:contents">
       <input id="address" type="text" placeholder="Enter address (e.g., 1600 Pennsylvania Ave NW, DC)" />
@@ -52,6 +72,7 @@
     <div class="spinner" id="spinner" aria-hidden="true"></div>
   </div>
 
+  <!-- Bottom bar -->
   <div class="bottom-bar">
     <button class="btn" id="zoomOut">−</button>
     <span id="zoomLevel" style="min-width:3ch;text-align:center">12</span>
@@ -61,15 +82,15 @@
   </div>
 
   <div class="note">Tip: drag the heart to fine-tune the location.</div>
+  <div class="diag" id="diag"></div>
 
   <script>
-    // Your cloud Map Style IDs (exactly as you provided)
+    // === Your Cloud Map Style IDs (exactly as provided) ===
     const MAP_IDS = {
       style1: "e39caf81ba4082b8",
       style2: "7c3917b8837ac562",
       style3: "d9bd015cd976b393"
     };
-
     const HEART_ICON = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Heart_coraz%C3%B3n.svg/1920px-Heart_coraz%C3%B3n.svg.png";
     const DEFAULT_CENTER = { lat: 40.7128, lng: -74.0060 };
     const DEFAULT_ZOOM = 12;
@@ -77,20 +98,48 @@
     let map, marker, geocoder;
     let currentStyleKey = "style1";
 
-    // Define initMap BEFORE loading Google script
+    // --- helpers ---
+    function showSpinner(show){
+      const s = document.getElementById("spinner");
+      s.style.display = show ? "inline-block" : "none";
+      s.setAttribute("aria-hidden", show ? "false" : "true");
+    }
+    function diag(msg){
+      const el = document.getElementById("diag");
+      el.textContent = msg;
+      el.style.display = "block";
+    }
+    function hideDiag(){ document.getElementById("diag").style.display = "none"; }
+    function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+    function getViewportSize(){
+      const rect = document.getElementById("map").getBoundingClientRect();
+      const margin = 40;
+      return { w: Math.max(320, rect.width - margin), h: Math.max(320, rect.height - margin) };
+    }
+
+    // --- Google callback must be global ---
     window.initMap = function(){
       geocoder = new google.maps.Geocoder();
 
       map = new google.maps.Map(document.getElementById("map"), {
         center: DEFAULT_CENTER,
         zoom: DEFAULT_ZOOM,
-        // IMPORTANT: only mapId (no mapTypeId) — cloud style must render
-        mapId: MAP_IDS[currentStyleKey],
+        mapId: MAP_IDS[currentStyleKey],   // use your Cloud Map Style
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
         clickableIcons: false
       });
+
+      // Tiles watchdog: if no tiles within 5s, show a clear message
+      let tilesLoaded = false;
+      const tl = map.addListener("tilesloaded", () => { tilesLoaded = true; hideDiag(); });
+      setTimeout(() => {
+        if (!tilesLoaded) {
+          diag("No tiles loaded for this Map ID. Fix in Google Cloud:\n• API key & Map IDs must be in the SAME project\n• Add referrer: https://sweethooligans.github.io/*\n• Enable Maps JavaScript API (and Billing)\n• Disable ad/privacy blockers for this page");
+        }
+        google.maps.event.removeListener(tl);
+      }, 5000);
 
       marker = new google.maps.Marker({
         position: DEFAULT_CENTER,
@@ -104,6 +153,7 @@
         document.getElementById("zoomLevel").textContent = map.getZoom();
       });
 
+      // Address search
       document.getElementById("address-form").addEventListener("submit", (e)=>{
         e.preventDefault();
         const addr = document.getElementById("address").value.trim();
@@ -122,7 +172,7 @@
         });
       });
 
-      // Style tabs: switch mapId directly
+      // Style tabs: switch exactly by mapId (no fallback)
       document.querySelectorAll(".tab").forEach(btn=>{
         btn.addEventListener("click", ()=>{
           document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
@@ -131,62 +181,63 @@
           const c = map.getCenter(); const z = map.getZoom();
           map.setOptions({ mapId: MAP_IDS[currentStyleKey] });
           map.setCenter(c); map.setZoom(z); marker.setMap(map);
+
+          // re-arm tiles watchdog on style switch
+          let ok = false;
+          const tl2 = map.addListener("tilesloaded", ()=>{ ok = true; hideDiag(); google.maps.event.removeListener(tl2); });
+          setTimeout(()=>{ if(!ok){ diag("No tiles for this Map ID. Check Cloud project + key restrictions."); } }, 4000);
         });
       });
 
-      // Zoom + centering
+      // Simple controls
       document.getElementById("zoomIn").addEventListener("click", ()=> map.setZoom(map.getZoom()+1));
       document.getElementById("zoomOut").addEventListener("click", ()=> map.setZoom(map.getZoom()-1));
       document.getElementById("centerMarker").addEventListener("click", ()=> map.panTo(marker.getPosition()));
 
-      // Download Static Map with the same map_id
-      document.getElementById("downloadBtn").addEventListener("click", downloadStaticPNG);
-    };
+      // Download PNG via Static Maps (uses SAME map_id)
+      document.getElementById("downloadBtn").addEventListener("click", ()=>{
+        const center = map.getCenter();
+        const lat = center.lat(); const lng = center.lng();
+        const zoom = clamp(map.getZoom(), 0, 21);
+        const viewport = getViewportSize(); const maxBase = 640;
+        let w = Math.min(maxBase, Math.round(viewport.w));
+        let h = Math.min(maxBase, Math.round(viewport.h));
+        w = Math.max(320, w); h = Math.max(320, h);
 
-    function showSpinner(show){
-      const s = document.getElementById("spinner");
-      s.style.display = show ? "inline-block" : "none";
-      s.setAttribute("aria-hidden", show ? "false" : "true");
-    }
-    function clamp(val, min, max){ return Math.max(min, Math.min(max, val)); }
+        const markerPos = marker.getPosition();
+        const iconUrl = encodeURIComponent(HEART_ICON);
+        const markers = `markers=icon:${iconUrl}|${markerPos.lat()},${markerPos.lng()}`;
 
-    function getViewportSize(){
-      const rect = document.getElementById("map").getBoundingClientRect();
-      const margin = 40;
-      return { w: Math.max(320, rect.width - margin), h: Math.max(320, rect.height - margin) };
-    }
+        const params = new URLSearchParams({
+          center: `${lat},${lng}`,
+          zoom: String(zoom),
+          size: `${w}x${h}`,
+          scale: "2",
+          format: "png",
+          map_id: MAP_IDS[currentStyleKey],
+          key: "AIzaSyCZskz6npeseDRcPLDbqaZZjwStCrwC3BQ"
+        });
 
-    function downloadStaticPNG(){
-      const center = map.getCenter();
-      const lat = center.lat(); const lng = center.lng();
-      const zoom = clamp(map.getZoom(), 0, 21);
-      const viewport = getViewportSize(); const maxBase = 640;
-      let w = Math.min(maxBase, Math.round(viewport.w));
-      let h = Math.min(maxBase, Math.round(viewport.h));
-      w = Math.max(320, w); h = Math.max(320, h);
+        const url = `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}&${markers}`;
 
-      const markerPos = marker.getPosition();
-      const iconUrl = encodeURIComponent(HEART_ICON);
-      const markers = `markers=icon:${iconUrl}|${markerPos.lat()},${markerPos.lng()}`;
-
-      const params = new URLSearchParams({
-        center: `${lat},${lng}`, zoom: String(zoom), size: `${w}x${h}`,
-        scale: "2", format: "png", map_id: MAP_IDS[currentStyleKey],
-        key: "AIzaSyCZskz6npeseDRcPLDbqaZZjwStCrwC3BQ"
+        fetch(url)
+          .then(r => r.blob())
+          .then(blob => {
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = `sweet-hooligans-map-${currentStyleKey.toUpperCase()}-${Date.now()}.png`;
+            document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(a.href);
+          })
+          .catch(err => {
+            console.error(err);
+            window.open(url, "_blank"); // fallback open if fetch is blocked
+          });
       });
-      const url = `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}&${markers}`;
-
-      fetch(url).then(r => r.blob()).then(blob => {
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `sweet-hooligans-map-${currentStyleKey.toUpperCase()}-${Date.now()}.png`;
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(a.href);
-      }).catch(err => { console.error(err); window.open(url, "_blank"); });
-    }
+    };
   </script>
 
-  <!-- Load Google Maps AFTER defining initMap -->
+  <!-- Load Google Maps AFTER defining initMap (your real key) -->
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCZskz6npeseDRcPLDbqaZZjwStCrwC3BQ&callback=initMap" async defer></script>
 </body>
 </html>
