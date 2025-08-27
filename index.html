@@ -9,7 +9,7 @@
     html,body{height:100%;margin:0}
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0b0b0d;color:#fff;overflow:hidden}
     #map{position:fixed;inset:0;z-index:0}
-    .controls,.bottom-bar,.note,.diag{position:fixed;background:var(--ui-bg);border:1px solid var(--ui-border);backdrop-filter:blur(8px);border-radius:12px;z-index:10}
+    .controls,.bottom-bar,.note{position:fixed;background:var(--ui-bg);border:1px solid var(--ui-border);backdrop-filter:blur(8px);border-radius:12px;z-index:10}
     .controls{top:12px;left:50%;transform:translateX(-50%);display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px}
     .controls input[type="text"]{width:min(58vw,520px);max-width:90vw;background:rgba(255,255,255,.08);color:var(--ui-text);border:1px solid var(--ui-border);outline:none;border-radius:10px;padding:10px 12px;font-size:16px}
     .btn{appearance:none;border:none;border-radius:10px;cursor:pointer;padding:10px 12px;font-weight:600;font-size:14px;background:rgba(255,255,255,.1);color:var(--ui-text);border:1px solid var(--ui-border);transition:transform .05s ease, background .2s}
@@ -19,7 +19,6 @@
     .tab.active{background:var(--accent);color:#fff}
     .bottom-bar{bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px}
     .note{right:12px;bottom:12px;font-size:12px;opacity:.75;padding:6px 8px}
-    .diag{left:12px;bottom:12px;font-size:12px;line-height:1.3;padding:8px 10px;display:none}
     .spinner{width:18px;height:18px;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin 1s linear infinite;display:none}
     @keyframes spin{to{transform:rotate(360deg)}}
     @media (max-width:640px){.controls input[type="text"]{width:58vw}.tabs{width:100%;justify-content:center}}
@@ -52,31 +51,211 @@
   </div>
 
   <div class="note">Tip: drag the heart to fine-tune the location.</div>
-  <div class="diag" id="diag"></div>
 
   <script>
-    // === Your Cloud Map Style IDs (same as you provided) ===
-    const MAP_IDS = {
-      style1: "e39caf81ba4082b8",
-      style2: "7c3917b8837ac562",
-      style3: "d9bd015cd976b393"
-    };
+    // ====== Your three style JSON arrays (from Google Maps Styling “Export JSON”) ======
+    // Style 1
+    const STYLE1_CLOUD = [
+      {"id":"infrastructure","geometry":{"visible":false},"label":{"visible":false}},
+      {"id":"infrastructure.building","geometry":{"visible":true}},
+      {"id":"infrastructure.businessCorridor","geometry":{"visible":false,"fillColor":"#e3e3e3"}},
+      {"id":"infrastructure.roadNetwork.road","geometry":{"visible":true,"fillColor":"#ebebeb"}},
+      {"id":"infrastructure.roadNetwork.road.highway","geometry":{"visible":true,"strokeColor":"#828282"},"label":{"visible":false,"textFillColor":"#383838"}},
+      {"id":"infrastructure.transitStation","label":{"textFillColor":"#8f8f8f","textStrokeColor":"#f5f5f5"}},
+      {"id":"natural","geometry":{"visible":true},"label":{"visible":true}},
+      {"id":"natural.archipelago","label":{"visible":false,"textFillColor":"#000000","textStrokeColor":"#ebebeb"}},
+      {"id":"natural.continent","label":{"visible":false,"textFillColor":"#000000"}},
+      {"id":"natural.island","label":{"visible":false,"textFillColor":"#ebebeb"}},
+      {"id":"natural.land","geometry":{"visible":true,"fillColor":"#ffffff"}},
+      {"id":"natural.land.landCover","geometry":{"visible":true,"fillColor":"#d6d6d6"}},
+      {"id":"natural.land.landCover.crops","geometry":{"visible":true,"fillColor":"#d6d6d6"}},
+      {"id":"natural.land.landCover.dryCrops","geometry":{"visible":true,"fillColor":"#c0c0c0"}},
+      {"id":"natural.land.landCover.forest","geometry":{"visible":false,"fillColor":"#ebebeb"}},
+      {"id":"natural.land.landCover.ice","geometry":{"visible":true,"fillColor":"#aaaaaa"}},
+      {"id":"natural.land.landCover.sand","geometry":{"visible":true}},
+      {"id":"natural.land.landCover.shrub","geometry":{"visible":true}},
+      {"id":"natural.land.landCover.tundra","geometry":{"visible":true}},
+      {"id":"natural.water","geometry":{"visible":true,"fillColor":"#7694a2"},"label":{"visible":false,"textFillColor":"#ffffff","textStrokeColor":"#7694a2"}},
+      {"id":"pointOfInterest","geometry":{"visible":false},"label":{"visible":false,"pinFillColor":"#9c9c9c","textFillColor":"#454545"}},
+      {"id":"pointOfInterest.emergency","geometry":{"visible":false},"label":{"visible":true}},
+      {"id":"pointOfInterest.emergency.hospital","geometry":{"visible":false},"label":{"visible":false}},
+      {"id":"pointOfInterest.emergency.pharmacy","label":{"visible":false}},
+      {"id":"pointOfInterest.entertainment","label":{"visible":false}},
+      {"id":"pointOfInterest.foodAndDrink","label":{"visible":false}},
+      {"id":"pointOfInterest.landmark","label":{"visible":false}},
+      {"id":"pointOfInterest.lodging","label":{"visible":false}},
+      {"id":"pointOfInterest.other.school","label":{"visible":false}},
+      {"id":"pointOfInterest.recreation","geometry":{"visible":false},"label":{"visible":false}},
+      {"id":"pointOfInterest.recreation.sportsComplex","geometry":{"visible":false}},
+      {"id":"pointOfInterest.retail","label":{"visible":false}},
+      {"id":"pointOfInterest.service","geometry":{"visible":false},"label":{"visible":false}},
+      {"id":"political","geometry":{"visible":false,"strokeColor":"#5c5c5c"},"label":{"visible":false}},
+      {"id":"political.city","label":{"textFillColor":"#383838"}}
+    ];
 
-    // === Config ===
+    // Style 2
+    const STYLE2_CLOUD = [
+      {"id":"infrastructure","geometry":{"visible":false,"fillColor":"#ffffff","strokeColor":"#ffffff"},"label":{"visible":false}},
+      {"id":"infrastructure.building","geometry":{"visible":false}},
+      {"id":"infrastructure.businessCorridor","geometry":{"visible":false,"fillColor":"#e3e3e3"}},
+      {"id":"infrastructure.roadNetwork","geometry":{"fillColor":"#454545"}},
+      {"id":"infrastructure.roadNetwork.road","geometry":{"visible":true},"label":{"visible":false}},
+      {"id":"infrastructure.roadNetwork.road.arterial","label":{"visible":false}},
+      {"id":"infrastructure.roadNetwork.road.highway","geometry":{"visible":true,"strokeColor":"#828282"},"label":{"visible":false,"textFillColor":"#383838"}},
+      {"id":"infrastructure.roadNetwork.road.local","label":{"visible":false}},
+      {"id":"infrastructure.roadNetwork.road.noOutlet","label":{"visible":false}},
+      {"id":"infrastructure.transitStation","label":{"textFillColor":"#8f8f8f","textStrokeColor":"#f5f5f5"}},
+      {"id":"natural","geometry":{"visible":false,"fillColor":"#ffffff"},"label":{"visible":false}},
+      {"id":"natural.archipelago","label":{"textFillColor":"#c0c0c0","textStrokeColor":"#d6d6d6"}},
+      {"id":"natural.land","geometry":{"visible":true,"fillColor":"#dedede"}},
+      {"id":"natural.water","geometry":{"visible":true,"fillColor":"#ffffff"},"label":{"textFillColor":"#ffffff","textStrokeColor":"#ffffff"}},
+      {"id":"pointOfInterest","geometry":{"visible":false,"fillColor":"#ffffff"},"label":{"visible":false,"pinFillColor":"#9c9c9c","textFillColor":"#454545"}},
+      {"id":"pointOfInterest.emergency.hospital","geometry":{"visible":false},"label":{"visible":false}},
+      {"id":"pointOfInterest.emergency.pharmacy","label":{"visible":false}},
+      {"id":"pointOfInterest.other.school","label":{"visible":false}},
+      {"id":"pointOfInterest.recreation.sportsComplex","geometry":{"visible":false}},
+      {"id":"pointOfInterest.retail","label":{"visible":false}},
+      {"id":"pointOfInterest.service","geometry":{"visible":false},"label":{"visible":false}},
+      {"id":"political","geometry":{"visible":false,"fillColor":"#ffffff","strokeColor":"#5c5c5c"},"label":{"visible":false}},
+      {"id":"political.city","label":{"textFillColor":"#383838"}}
+    ];
+
+    // Style 3
+    const STYLE3_CLOUD = [
+      {"id":"infrastructure","geometry":{"visible":false,"fillColor":"#ffffff","strokeColor":"#ffffff"},"label":{"visible":false}},
+      {"id":"infrastructure.building","geometry":{"visible":false}},
+      {"id":"infrastructure.businessCorridor","geometry":{"visible":false,"fillColor":"#e3e3e3"}},
+      {"id":"infrastructure.roadNetwork","geometry":{"visible":false,"fillColor":"#454545"}},
+      {"id":"infrastructure.roadNetwork.road","geometry":{"visible":true},"label":{"visible":false}},
+      {"id":"infrastructure.roadNetwork.road.highway","geometry":{"visible":false,"strokeColor":"#828282"},"label":{"visible":false,"textFillColor":"#383838"}},
+      {"id":"infrastructure.transitStation","label":{"textFillColor":"#8f8f8f","textStrokeColor":"#f5f5f5"}},
+      {"id":"infrastructure.urbanArea","geometry":{"visible":false}},
+      {"id":"natural","geometry":{"visible":false,"fillColor":"#ffffff"},"label":{"visible":false}},
+      {"id":"natural.land","geometry":{"visible":true}},
+      {"id":"natural.water","geometry":{"visible":false,"fillColor":"#aaaaaa"},"label":{"visible":false,"textFillColor":"#ffffff","textStrokeColor":"#aaaaaa"}},
+      {"id":"pointOfInterest","geometry":{"visible":false,"fillColor":"#ffffff"},"label":{"visible":false,"pinFillColor":"#9c9c9c","textFillColor":"#454545"}},
+      {"id":"pointOfInterest.emergency.hospital","geometry":{"visible":false},"label":{"visible":false}},
+      {"id":"pointOfInterest.emergency.pharmacy","label":{"visible":false}},
+      {"id":"pointOfInterest.other.school","label":{"visible":false}},
+      {"id":"pointOfInterest.recreation.sportsComplex","geometry":{"visible":false}},
+      {"id":"pointOfInterest.retail","label":{"visible":false}},
+      {"id":"pointOfInterest.service","geometry":{"visible":false},"label":{"visible":false}},
+      {"id":"political","geometry":{"visible":false,"fillColor":"#ffffff","strokeColor":"#5c5c5c"},"label":{"visible":false}},
+      {"id":"political.city","label":{"textFillColor":"#383838"}}
+    ];
+
+    // === Your API key + heart icon ===
     const GOOGLE_API_KEY = "AIzaSyCZskz6npeseDRcPLDbqaZZjwStCrwC3BQ";
     const HEART_ICON = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Heart_coraz%C3%B3n.svg/1920px-Heart_coraz%C3%B3n.svg.png";
-    const DEFAULT_CENTER = { lat: 40.7128, lng: -74.0060 }; // NYC
+
+    // === Map setup ===
+    const DEFAULT_CENTER = { lat: 40.7128, lng: -74.0060 };
     const DEFAULT_ZOOM = 12;
 
+    // Map + helpers
     let map, marker, geocoder;
     let currentStyleKey = "style1";
 
-    // Small helpers
-    const showSpinner = (show)=>{ const s=document.getElementById("spinner"); s.style.display=show?"inline-block":"none"; s.setAttribute("aria-hidden", show?"false":"true"); };
-    const diag = (msg)=>{ const d=document.getElementById("diag"); d.textContent=msg; d.style.display="block"; };
-    const hideDiag = ()=>{ document.getElementById("diag").style.display="none"; };
-    const clamp = (v,min,max)=> Math.max(min, Math.min(max, v));
-    const getViewportSize = ()=>{ const r=document.getElementById("map").getBoundingClientRect(); const m=40; return { w: Math.max(320, r.width-m), h: Math.max(320, r.height-m) }; };
+    // --- Convert your Cloud JSON (id/geometry/label) into classic JS API stylers ---
+    function cloudToClassic(cloudArr){
+      const out = [];
+      const mapFeature = (id) => {
+        if (!id) return null;
+        if (id.startsWith("natural.water")) return "water";
+        if (id.startsWith("natural.land")) return "landscape";
+        if (id.startsWith("natural")) return "landscape";
+        if (id.includes("roadNetwork.road.highway")) return "road.highway";
+        if (id.includes("roadNetwork.road.arterial")) return "road.arterial";
+        if (id.includes("roadNetwork.road.local")) return "road.local";
+        if (id.includes("roadNetwork.road")) return "road";
+        if (id.includes("transitStation")) return "transit.station";
+        if (id.startsWith("infrastructure.building")) return "landscape.man_made";
+        if (id.startsWith("pointOfInterest")) return "poi";
+        if (id.startsWith("political.city")) return "administrative.locality";
+        if (id.startsWith("political")) return "administrative";
+        if (id.startsWith("infrastructure")) return "road";
+        return null;
+      };
+      const pushRule = (featureType, elementType, stylers) => {
+        if (!featureType || !elementType || !stylers || !stylers.length) return;
+        out.push({ featureType, elementType, stylers });
+      };
+      for (const entry of cloudArr || []){
+        const ft = mapFeature(entry.id);
+        // geometry
+        if (entry.geometry){
+          if ("visible" in entry.geometry){
+            pushRule(ft, "geometry", [{ visibility: entry.geometry.visible ? "on" : "off" }]);
+          }
+          if (entry.geometry.fillColor){
+            pushRule(ft, "geometry.fill", [{ color: entry.geometry.fillColor }]);
+          }
+          if (entry.geometry.strokeColor){
+            pushRule(ft, "geometry.stroke", [{ color: entry.geometry.strokeColor }]);
+          }
+        }
+        // label
+        if (entry.label){
+          if ("visible" in entry.label){
+            pushRule(ft, "labels", [{ visibility: entry.label.visible ? "on" : "off" }]);
+          }
+          if (entry.label.textFillColor){
+            pushRule(ft, "labels.text.fill", [{ color: entry.label.textFillColor }]);
+          }
+          if (entry.label.textStrokeColor){
+            pushRule(ft, "labels.text.stroke", [{ color: entry.label.textStrokeColor }]);
+          }
+        }
+      }
+      return out;
+    }
+
+    // Convert classic stylers to Static Maps style= params
+    function classicToStaticParams(classicArr){
+      const params = [];
+      for (const r of classicArr || []){
+        const parts = [];
+        if (r.featureType) parts.push(`feature:${r.featureType}`);
+        if (r.elementType) parts.push(`element:${r.elementType}`);
+        if (Array.isArray(r.stylers)){
+          for (const st of r.stylers){
+            const [k,v] = Object.entries(st)[0] || [];
+            if(!k) continue;
+            if (k === "visibility"){ parts.push(`visibility:${v}`); }
+            else if (k === "color"){ parts.push(`color:${String(v).replace("#","0x")}`); }
+            else if (k === "saturation"){ parts.push(`saturation:${v}`); }
+            else if (k === "lightness"){ parts.push(`lightness:${v}`); }
+            else if (k === "gamma"){ parts.push(`gamma:${v}`); }
+            else if (k === "weight"){ parts.push(`weight:${v}`); }
+            else if (k === "invert_lightness"){ parts.push(`invert_lightness:${v ? "true" : "false"}`); }
+          }
+        }
+        if (parts.length) params.push(parts.join("|"));
+      }
+      return params;
+    }
+
+    // Pick the current cloud array by key
+    const CLOUD_BY_KEY = {
+      style1: STYLE1_CLOUD,
+      style2: STYLE2_CLOUD,
+      style3: STYLE3_CLOUD
+    };
+
+    function getClassicFor(key){ return cloudToClassic(CLOUD_BY_KEY[key] || []); }
+
+    // Small utilities
+    function showSpinner(show){
+      const s = document.getElementById("spinner");
+      s.style.display = show ? "inline-block" : "none";
+      s.setAttribute("aria-hidden", show ? "false" : "true");
+    }
+    function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+    function getViewportSize(){
+      const r = document.getElementById("map").getBoundingClientRect();
+      const m = 40;
+      return { w: Math.max(320, r.width - m), h: Math.max(320, r.height - m) };
+    }
 
     // Google callback must be global
     window.initMap = function(){
@@ -85,22 +264,9 @@
       map = new google.maps.Map(document.getElementById("map"), {
         center: DEFAULT_CENTER,
         zoom: DEFAULT_ZOOM,
-        mapId: MAP_IDS[currentStyleKey],      // use your cloud style
-        mapTypeControl: false,
-        streetViewControl: false,
-        fullscreenControl: false,
-        clickableIcons: false
+        styles: getClassicFor(currentStyleKey),
+        mapTypeControl:false, streetViewControl:false, fullscreenControl:false, clickableIcons:false
       });
-
-      // Watch for tiles; show a clear message if none arrive
-      let gotTiles = false;
-      const tl = map.addListener("tilesloaded", ()=>{ gotTiles = true; hideDiag(); });
-      setTimeout(()=> {
-        if(!gotTiles){
-          diag("No tiles for this Map ID. Fix in Google Cloud project:\n• Key & Map IDs in the SAME project (check Project ID)\n• Add referrers: https://sweethooligans.github.io/* and https://*.github.io/*\n• Enable Maps JavaScript API + Billing\n• Disable ad/privacy blockers for this page");
-        }
-        google.maps.event.removeListener(tl);
-      }, 5000);
 
       marker = new google.maps.Marker({
         position: DEFAULT_CENTER,
@@ -124,4 +290,73 @@
             const loc = results[0].geometry.location;
             map.panTo(loc);
             marker.setPosition(loc);
-            if(map.getZoom()
+            if(map.getZoom() < 14) map.setZoom(14);
+          }else{
+            alert("Address not found: " + status);
+          }
+        });
+      });
+
+      // Style tabs
+      document.querySelectorAll(".tab").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
+          btn.classList.add("active");
+          currentStyleKey = btn.dataset.style;
+          const c = map.getCenter(), z = map.getZoom();
+          map.setOptions({ styles: getClassicFor(currentStyleKey) });
+          map.setCenter(c); map.setZoom(z); marker.setMap(map);
+        });
+      });
+
+      // Zoom + center
+      document.getElementById("zoomIn").addEventListener("click", ()=> map.setZoom(map.getZoom()+1));
+      document.getElementById("zoomOut").addEventListener("click", ()=> map.setZoom(map.getZoom()-1));
+      document.getElementById("centerMarker").addEventListener("click", ()=> map.panTo(marker.getPosition()));
+
+      // Download PNG (Static Maps) with styling preserved
+      document.getElementById("downloadBtn").addEventListener("click", ()=>{
+        const c = map.getCenter();
+        const lat = c.lat(), lng = c.lng();
+        const zoom = clamp(map.getZoom(), 0, 21);
+        const vp = getViewportSize();
+        const maxBase = 640;
+        let w = Math.min(maxBase, Math.round(vp.w));
+        let h = Math.min(maxBase, Math.round(vp.h));
+        w = Math.max(320, w); h = Math.max(320, h);
+
+        const p = marker.getPosition();
+        const icon = encodeURIComponent(HEART_ICON);
+        const markers = `markers=icon:${icon}|${p.lat()},${p.lng()}`;
+
+        const params = new URLSearchParams({
+          center: `${lat},${lng}`,
+          zoom: String(zoom),
+          size: `${w}x${h}`,
+          scale: "2",
+          format: "png",
+          key: GOOGLE_API_KEY
+        });
+
+        // translate the CURRENT classic styles into Static Maps style= params
+        const classic = getClassicFor(currentStyleKey);
+        const styleParams = classicToStaticParams(classic);
+        for (const s of styleParams){ params.append("style", s); }
+
+        const url = `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}&${markers}`;
+
+        fetch(url).then(r=>r.blob()).then(blob=>{
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = `sweet-hooligans-map-${currentStyleKey.toUpperCase()}-${Date.now()}.png`;
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(a.href);
+        }).catch(err=>{ console.error(err); window.open(url, "_blank"); });
+      });
+    };
+  </script>
+
+  <!-- Load Google Maps AFTER defining initMap -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCZskz6npeseDRcPLDbqaZZjwStCrwC3BQ&callback=initMap&v=weekly" async defer></script>
+</body>
+</html>
