@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Bare MapID Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>html,body,#map{height:100%;margin:0} #map{background:#444}</style>
+  <script>
+    // CHANGE THIS LINE to test Style 1/2/3 if you want
+    const MAP_ID = "e39caf81ba4082b8";
+    window.initMap = function(){
+      const map = new google.maps.Map(document.getElementById('map'), {
+        center: {lat:40.7128,lng:-74.0060},
+        zoom: 12,
+        mapId: MAP_ID,
+        mapTypeControl: false, streetViewControl: false, fullscreenControl: false
+      });
+      let tiles = false;
+      const l = map.addListener('tilesloaded', ()=>{ tiles = true; });
+      setTimeout(()=>{ if(!tiles){ 
+        document.getElementById('map').innerHTML =
+          '<div style="color:#fff;font:14px system-ui;padding:12px">' +
+          '❌ No tiles. This means your Map ID is not being served with this API key/referrer/project.<br>' +
+          'Check: Same project for Key+Styles, referrer patterns, APIs enabled, billing, and ad/privacy blockers.' +
+          '</div>'; 
+      }}, 5000);
+    };
+  </script>
+</head>
+<body>
+  <div id="map"></div>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCZskz6npeseDRcPLDbqaZZjwStCrwC3BQ&callback=initMap" async defer></script>
+</body>
+</html>
