@@ -32,6 +32,7 @@
       border:1px solid var(--ui-border);border-radius:12px;padding:8px 10px;z-index:10
     }
     .note{position:fixed;right:12px;bottom:12px;font-size:12px;opacity:.75;background:var(--ui-bg);border:1px solid var(--ui-border);padding:6px 8px;border-radius:10px}
+    .warn{position:fixed;left:12px;bottom:12px;font-size:12px;opacity:.9;background:#e11d48;border:1px solid #fda4af;color:white;padding:6px 8px;border-radius:10px;display:none}
     .spinner{width:18px;height:18px;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin 1s linear infinite;display:none}
     @keyframes spin{to{transform:rotate(360deg)}} @media (max-width:640px){.controls input[type="text"]{width:58vw}.tabs{width:100%;justify-content:center}}
   </style>
@@ -44,14 +45,202 @@
       <input id="address" type="text" placeholder="Enter address (e.g., 1600 Pennsylvania Ave NW, DC)" />
       <button class="btn primary" id="searchBtn" type="submit">Search</button>
     </form>
-    <div class="tabs" aria-label="Map Styles">
-      <button class="tab active" data-style="roadmap">Roadmap</button>
-      <button class="tab" data-style="satellite">Satellite</button>
-      <button class="tab" data-style="terrain">Terrain</button>
+    <div class="tabs" aria-label="Map Styles" id="tabs">
+      <button class="tab active" data-style="style1">Style 1</button>
+      <button class="tab" data-style="style2">Style 2</button>
+      <button class="tab" data-style="style3">Style 3</button>
     </div>
     <div class="spinner" id="spinner" aria-hidden="true"></div>
   </div>
 
   <div class="bottom-bar">
-    <button class="btn" id="zoom
+    <button class="btn" id="zoomOut">−</button>
+    <span id="zoomLevel" style="min-width:3ch;text-align:center">12</span>
+    <button class="btn" id="zoomIn">+</button>
+    <button class="btn" id="centerMarker">Center to Marker</button>
+    <button class="btn primary" id="downloadBtn">Download PNG</button>
+  </div>
 
+  <div class="note">Tip: drag the heart to fine-tune the location.</div>
+  <div class="warn" id="warn">Using fallback basemaps (your Map IDs aren’t accessible with this API key).</div>
+
+  <script>
+    // === Your 3 Cloud Map Style IDs (as you provided) ===
+    const MAP_IDS = {
+      style1: "e39caf81ba4082b8",
+      style2: "7c3917b8837ac562",
+      style3: "d9bd015cd976b393"
+    };
+
+    const HEART_ICON = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Heart_coraz%C3%B3n.svg/1920px-Heart_coraz%C3%B3n.svg.png";
+    const DEFAULT_CENTER = { lat: 40.7128, lng: -74.0060 };
+    const DEFAULT_ZOOM = 12;
+
+    let map, marker, geocoder;
+    let currentStyleKey = "style1";
+    let usingFallback = false;
+
+    // Expose initMap before loading the Google script
+    window.initMap = function(){
+      geocoder = new google.maps.Geocoder();
+
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: DEFAULT_CENTER,
+        zoom: DEFAULT_ZOOM,
+        mapId: MAP_IDS[currentStyleKey], // try cloud style
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+        clickableIcons: false
+      });
+
+      // If tiles don't load in time, switch to fallback
+      let tilesLoaded = false;
+      const tilesListener = map.addListener("tilesloaded", () => { tilesLoaded = true; });
+      setTimeout(() => {
+        if (!tilesLoaded) {
+          enableFallback("style1"); // start on roadmap
+        }
+        google.maps.event.removeListener(tilesListener);
+      }, 4000);
+
+      marker = new google.maps.Marker({
+        position: DEFAULT_CENTER,
+        map,
+        draggable: true,
+        icon: { url: HEART_ICON, scaledSize: new google.maps.Size(34,34) },
+        title: "Drag me to adjust"
+      });
+
+      map.addListener("zoom_changed", () => {
+        document.getElementById("zoomLevel").textContent = map.getZoom();
+      });
+
+      document.getElementById("address-form").addEventListener("submit", (e)=>{
+        e.preventDefault();
+        const addr = document.getElementById("address").value.trim();
+        if(!addr) return;
+        showSpinner(true);
+        geocoder.geocode({ address: addr }, (results, status)=>{
+          showSpinner(false);
+          if(status === "OK" && results[0]){
+            const loc = results[0].geometry.location;
+            map.panTo(loc);
+            marker.setPosition(loc);
+            if(map.getZoom() < 14) map.setZoom(14);
+          }else{
+            alert("Address not found: " + status);
+          }
+        });
+      });
+
+      // Tab handling
+      document.querySelectorAll(".tab").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
+          btn.classList.add("active");
+          currentStyleKey = btn.dataset.style;
+          switchStyle(currentStyleKey);
+        });
+      });
+
+      // Zoom + centering
+      document.getElementById("zoomIn").addEventListener("click", ()=> map.setZoom(map.getZoom()+1));
+      document.getElementById("zoomOut").addEventListener("click", ()=> map.setZoom(map.getZoom()-1));
+      document.getElementById("centerMarker").addEventListener("click", ()=> map.panTo(marker.getPosition()));
+
+      // Download Static Map
+      document.getElementById("downloadBtn").addEventListener("click", downloadStaticPNG);
+    };
+
+    function switchStyle(styleKey){
+      if (usingFallback) {
+        // Fallback: mapTypeId instead of mapId
+        const type = (styleKey === "style1") ? "roadmap" : (styleKey === "style2" ? "satellite" : "terrain");
+        const c = map.getCenter(); const z = map.getZoom();
+        map.setOptions({ mapTypeId: type, mapId: null });
+        map.setCenter(c); map.setZoom(z); marker.setMap(map);
+      } else {
+        // Try cloud map style
+        const c = map.getCenter(); const z = map.getZoom();
+        map.setOptions({ mapId: MAP_IDS[styleKey], mapTypeId: undefined });
+        map.setCenter(c); map.setZoom(z); marker.setMap(map);
+
+        // Guard: if still no tiles after switching, fall back
+        let ok = false;
+        const l = map.addListener("tilesloaded", () => { ok = true; google.maps.event.removeListener(l); });
+        setTimeout(() => { if (!ok) enableFallback(styleKey); }, 2500);
+      }
+    }
+
+    function enableFallback(styleKeyJustClicked){
+      usingFallback = true;
+      document.getElementById("warn").style.display = "block";
+      // Relabel tabs to make sense in fallback mode
+      const tabs = document.querySelectorAll(".tab");
+      tabs[0].textContent = "Roadmap";
+      tabs[1].textContent = "Satellite";
+      tabs[2].textContent = "Terrain";
+      // Apply fallback type immediately
+      const type = (styleKeyJustClicked === "style1") ? "roadmap" :
+                   (styleKeyJustClicked === "style2" ? "satellite" : "terrain");
+      const c = map.getCenter(); const z = map.getZoom();
+      map.setOptions({ mapTypeId: type, mapId: null });
+      map.setCenter(c); map.setZoom(z); marker.setMap(map);
+    }
+
+    function showSpinner(show){
+      const s = document.getElementById("spinner");
+      s.style.display = show ? "inline-block" : "none";
+      s.setAttribute("aria-hidden", show ? "false" : "true");
+    }
+
+    function clamp(val, min, max){ return Math.max(min, Math.min(max, val)); }
+
+    function getViewportSize(){
+      const rect = document.getElementById("map").getBoundingClientRect();
+      const margin = 40;
+      return { w: Math.max(320, rect.width - margin), h: Math.max(320, rect.height - margin) };
+    }
+
+    function downloadStaticPNG(){
+      const center = map.getCenter();
+      const lat = center.lat(); const lng = center.lng();
+      const zoom = clamp(map.getZoom(), 0, 21);
+      const viewport = getViewportSize(); const maxBase = 640;
+      let w = Math.min(maxBase, Math.round(viewport.w));
+      let h = Math.min(maxBase, Math.round(viewport.h));
+      w = Math.max(320, w); h = Math.max(320, h);
+
+      const markerPos = marker.getPosition();
+      const iconUrl = encodeURIComponent(HEART_ICON);
+      const markers = `markers=icon:${iconUrl}|${markerPos.lat()},${markerPos.lng()}`;
+
+      const params = new URLSearchParams({
+        center: `${lat},${lng}`, zoom: String(zoom), size: `${w}x${h}`,
+        scale: "2", format: "png"
+      });
+
+      // Use map_id only if not in fallback
+      if (!usingFallback) params.set("map_id", MAP_IDS[currentStyleKey]);
+
+      // Your real Google API key
+      params.set("key", "AIzaSyCZskz6npeseDRcPLDbqaZZjwStCrwC3BQ");
+
+      const url = `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}&${markers}`;
+
+      fetch(url).then(r => r.blob()).then(blob => {
+        const a = document.createElement("a");
+        const label = (usingFallback ? (currentStyleKey === "style1" ? "Roadmap" : currentStyleKey === "style2" ? "Satellite" : "Terrain") : currentStyleKey.toUpperCase());
+        a.href = URL.createObjectURL(blob);
+        a.download = `sweet-hooligans-map-${label}-${Date.now()}.png`;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(a.href);
+      }).catch(err => { console.error(err); window.open(url, "_blank"); });
+    }
+  </script>
+
+  <!-- Load Google Maps AFTER defining initMap -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCZskz6npeseDRcPLDbqaZZjwStCrwC3BQ&callback=initMap" async defer></script>
+</body>
+</html>
