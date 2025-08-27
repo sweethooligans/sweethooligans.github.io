@@ -1,25 +1,173 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Maps Smoke Test</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>html,body,#map{height:100%;margin:0} body{font-family:system-ui}</style>
-  <script>
-    function initMap(){
-      new google.maps.Map(document.getElementById('map'), {
-        center: {lat:40.7128, lng:-74.0060},
-        zoom: 12,
-        mapId: 'e39caf81ba4082b8',
-        mapTypeControl:false,
-        streetViewControl:false
-      });
+  <meta charset="utf-8" />
+  <title>Sweet Hooligans – Map Generator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{ --ui-bg: rgba(24,24,27,.7); --ui-border: rgba(255,255,255,.15); --ui-text: #fff; --accent: #4CAF50; }
+    html,body{height:100%;margin:0}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0b0b0d;color:#fff;overflow:hidden}
+    #map{position:fixed;inset:0}
+    .controls{
+      position:fixed;top:12px;left:50%;transform:translateX(-50%);
+      display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+      background:var(--ui-bg);backdrop-filter: blur(8px);
+      border:1px solid var(--ui-border);border-radius:12px;padding:10px 12px;z-index:10
     }
-  </script>
+    .controls input[type="text"]{
+      width:min(58vw,520px);max-width:90vw;background:rgba(255,255,255,.08);color:var(--ui-text);
+      border:1px solid var(--ui-border);outline:none;border-radius:10px;padding:10px 12px;font-size:16px
+    }
+    .btn{appearance:none;border:none;border-radius:10px;cursor:pointer;padding:10px 12px;font-weight:600;font-size:14px;
+      background:rgba(255,255,255,.1);color:var(--ui-text);border:1px solid var(--ui-border);transition:transform .05s ease, background .2s}
+    .btn:active{transform:translateY(1px)} .btn.primary{background:var(--accent)}
+    .tabs{display:flex;gap:6px}
+    .tab{padding:8px 10px;border-radius:10px;border:1px solid var(--ui-border);background:rgba(255,255,255,.08);cursor:pointer;font-size:13px}
+    .tab.active{background:var(--accent);color:#fff}
+    .bottom-bar{
+      position:fixed;bottom:12px;left:50%;transform:translateX(-50%);
+      display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+      background:var(--ui-bg);backdrop-filter: blur(8px);
+      border:1px solid var(--ui-border);border-radius:12px;padding:8px 10px;z-index:10
+    }
+    .note{position:fixed;right:12px;bottom:12px;font-size:12px;opacity:.75;background:var(--ui-bg);border:1px solid var(--ui-border);padding:6px 8px;border-radius:10px}
+    .spinner{width:18px;height:18px;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin 1s linear infinite;display:none}
+    @keyframes spin{to{transform:rotate(360deg)}} @media (max-width:640px){.controls input[type="text"]{width:58vw}.tabs{width:100%;justify-content:center}}
+  </style>
 </head>
 <body>
   <div id="map"></div>
-  <!-- Your real key is already inserted here -->
+
+  <div class="controls">
+    <form id="address-form" style="display:contents">
+      <input id="address" type="text" placeholder="Enter address (e.g., 1600 Pennsylvania Ave NW, DC)" />
+      <button class="btn primary" id="searchBtn" type="submit">Search</button>
+    </form>
+    <div class="tabs" aria-label="Map Styles">
+      <button class="tab active" data-style="style1">Style 1</button>
+      <button class="tab" data-style="style2">Style 2</button>
+      <button class="tab" data-style="style3">Style 3</button>
+    </div>
+    <div class="spinner" id="spinner" aria-hidden="true"></div>
+  </div>
+
+  <div class="bottom-bar">
+    <button class="btn" id="zoomOut">−</button>
+    <span id="zoomLevel" style="min-width:3ch;text-align:center">12</span>
+    <button class="btn" id="zoomIn">+</button>
+    <button class="btn" id="centerMarker">Center to Marker</button>
+    <button class="btn primary" id="downloadBtn">Download PNG</button>
+  </div>
+
+  <div class="note">Tip: drag the heart to fine-tune the location.</div>
+
+  <!-- Google Maps JS API (key inserted) -->
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCZskz6npeseDRcPLDbqaZZjwStCrwC3BQ&callback=initMap" async defer></script>
+  <script>
+    const MAP_IDS = {
+      style1: "e39caf81ba4082b8",
+      style2: "7c3917b8837ac562",
+      style3: "d9bd015cd976b393"
+    };
+    const HEART_ICON = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Heart_coraz%C3%B3n.svg/1920px-Heart_coraz%C3%B3n.svg.png";
+    const DEFAULT_CENTER = { lat: 40.7128, lng: -74.0060 };
+    const DEFAULT_ZOOM = 12;
+
+    let map, marker, geocoder;
+    let currentStyleKey = "style1";
+
+    function initMap(){
+      geocoder = new google.maps.Geocoder();
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, mapId: MAP_IDS[currentStyleKey],
+        mapTypeControl: false, streetViewControl: false, fullscreenControl: false, clickableIcons: false
+      });
+      marker = new google.maps.Marker({
+        position: DEFAULT_CENTER, map, draggable: true,
+        icon: { url: HEART_ICON, scaledSize: new google.maps.Size(34,34) }, title: "Drag me to adjust"
+      });
+      map.addListener("zoom_changed", () => { document.getElementById("zoomLevel").textContent = map.getZoom(); });
+
+      document.getElementById("address-form").addEventListener("submit", (e)=>{
+        e.preventDefault();
+        const addr = document.getElementById("address").value.trim();
+        if(!addr) return;
+        showSpinner(true);
+        geocoder.geocode({ address: addr }, (results, status)=>{
+          showSpinner(false);
+          if(status === "OK" && results[0]){
+            const loc = results[0].geometry.location;
+            map.panTo(loc);
+            marker.setPosition(loc);
+            if(map.getZoom() < 14) map.setZoom(14);
+          }else{
+            alert("Address not found: " + status);
+          }
+        });
+      });
+
+      document.querySelectorAll(".tab").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
+          btn.classList.add("active");
+          currentStyleKey = btn.dataset.style;
+          const center = map.getCenter(); const zoom = map.getZoom();
+          map.setOptions({ mapId: MAP_IDS[currentStyleKey] });
+          map.setCenter(center); map.setZoom(zoom);
+          marker.setMap(map);
+        });
+      });
+
+      document.getElementById("zoomIn").addEventListener("click", ()=> map.setZoom(map.getZoom()+1));
+      document.getElementById("zoomOut").addEventListener("click", ()=> map.setZoom(map.getZoom()-1));
+      document.getElementById("centerMarker").addEventListener("click", ()=> map.panTo(marker.getPosition()));
+      document.getElementById("downloadBtn").addEventListener("click", downloadStaticPNG);
+    }
+
+    function showSpinner(show){
+      const s = document.getElementById("spinner");
+      s.style.display = show ? "inline-block" : "none";
+      s.setAttribute("aria-hidden", show ? "false" : "true");
+    }
+    function clamp(val, min, max){ return Math.max(min, Math.min(max, val)); }
+
+    function downloadStaticPNG(){
+      const center = map.getCenter();
+      const lat = center.lat(); const lng = center.lng();
+      const zoom = clamp(map.getZoom(), 0, 21);
+      const viewport = getViewportSize(); const maxBase = 640;
+      let w = Math.min(maxBase, Math.round(viewport.w));
+      let h = Math.min(maxBase, Math.round(viewport.h));
+      w = Math.max(320, w); h = Math.max(320, h);
+
+      const markerPos = marker.getPosition();
+      const iconUrl = encodeURIComponent(HEART_ICON);
+      const markers = `markers=icon:${iconUrl}|${markerPos.lat()},${markerPos.lng()}`;
+
+      const params = new URLSearchParams({
+        center: `${lat},${lng}`, zoom: String(zoom), size: `${w}x${h}`,
+        scale: "2", format: "png", map_id: MAP_IDS[currentStyleKey],
+        key: "AIzaSyCZskz6npeseDRcPLDbqaZZjwStCrwC3BQ"
+      });
+      const url = `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}&${markers}`;
+
+      fetch(url).then(r => r.blob()).then(blob => {
+        const a = document.createElement("a");
+        const styleLabel = currentStyleKey.toUpperCase();
+        a.href = URL.createObjectURL(blob);
+        a.download = `sweet-hooligans-map-${styleLabel}-${Date.now()}.png`;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(a.href);
+      }).catch(err => { console.error(err); window.open(url, "_blank"); });
+    }
+
+    function getViewportSize(){
+      const rect = document.getElementById("map").getBoundingClientRect();
+      const margin = 40;
+      return { w: Math.max(320, rect.width - margin), h: Math.max(320, rect.height - margin) };
+    }
+  </script>
 </body>
 </html>
+
