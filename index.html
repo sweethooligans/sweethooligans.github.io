@@ -32,7 +32,6 @@
       border:1px solid var(--ui-border);border-radius:12px;padding:8px 10px;z-index:10
     }
     .note{position:fixed;right:12px;bottom:12px;font-size:12px;opacity:.75;background:var(--ui-bg);border:1px solid var(--ui-border);padding:6px 8px;border-radius:10px}
-    .warn{position:fixed;left:12px;bottom:12px;font-size:12px;opacity:.9;background:#e11d48;border:1px solid #fda4af;color:white;padding:6px 8px;border-radius:10px;display:none}
     .spinner{width:18px;height:18px;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin 1s linear infinite;display:none}
     @keyframes spin{to{transform:rotate(360deg)}} @media (max-width:640px){.controls input[type="text"]{width:58vw}.tabs{width:100%;justify-content:center}}
   </style>
@@ -62,10 +61,9 @@
   </div>
 
   <div class="note">Tip: drag the heart to fine-tune the location.</div>
-  <div class="warn" id="warn">Using fallback basemaps (your Map IDs aren’t accessible with this API key).</div>
 
   <script>
-    // === Your 3 Cloud Map Style IDs (as you provided) ===
+    // Your cloud Map Style IDs (exactly as you provided)
     const MAP_IDS = {
       style1: "e39caf81ba4082b8",
       style2: "7c3917b8837ac562",
@@ -78,31 +76,21 @@
 
     let map, marker, geocoder;
     let currentStyleKey = "style1";
-    let usingFallback = false;
 
-    // Expose initMap before loading the Google script
+    // Define initMap BEFORE loading Google script
     window.initMap = function(){
       geocoder = new google.maps.Geocoder();
 
       map = new google.maps.Map(document.getElementById("map"), {
         center: DEFAULT_CENTER,
         zoom: DEFAULT_ZOOM,
-        mapId: MAP_IDS[currentStyleKey], // try cloud style
+        // IMPORTANT: only mapId (no mapTypeId) — cloud style must render
+        mapId: MAP_IDS[currentStyleKey],
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
         clickableIcons: false
       });
-
-      // If tiles don't load in time, switch to fallback
-      let tilesLoaded = false;
-      const tilesListener = map.addListener("tilesloaded", () => { tilesLoaded = true; });
-      setTimeout(() => {
-        if (!tilesLoaded) {
-          enableFallback("style1"); // start on roadmap
-        }
-        google.maps.event.removeListener(tilesListener);
-      }, 4000);
 
       marker = new google.maps.Marker({
         position: DEFAULT_CENTER,
@@ -134,13 +122,15 @@
         });
       });
 
-      // Tab handling
+      // Style tabs: switch mapId directly
       document.querySelectorAll(".tab").forEach(btn=>{
         btn.addEventListener("click", ()=>{
           document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
           btn.classList.add("active");
           currentStyleKey = btn.dataset.style;
-          switchStyle(currentStyleKey);
+          const c = map.getCenter(); const z = map.getZoom();
+          map.setOptions({ mapId: MAP_IDS[currentStyleKey] });
+          map.setCenter(c); map.setZoom(z); marker.setMap(map);
         });
       });
 
@@ -149,52 +139,15 @@
       document.getElementById("zoomOut").addEventListener("click", ()=> map.setZoom(map.getZoom()-1));
       document.getElementById("centerMarker").addEventListener("click", ()=> map.panTo(marker.getPosition()));
 
-      // Download Static Map
+      // Download Static Map with the same map_id
       document.getElementById("downloadBtn").addEventListener("click", downloadStaticPNG);
     };
-
-    function switchStyle(styleKey){
-      if (usingFallback) {
-        // Fallback: mapTypeId instead of mapId
-        const type = (styleKey === "style1") ? "roadmap" : (styleKey === "style2" ? "satellite" : "terrain");
-        const c = map.getCenter(); const z = map.getZoom();
-        map.setOptions({ mapTypeId: type, mapId: null });
-        map.setCenter(c); map.setZoom(z); marker.setMap(map);
-      } else {
-        // Try cloud map style
-        const c = map.getCenter(); const z = map.getZoom();
-        map.setOptions({ mapId: MAP_IDS[styleKey], mapTypeId: undefined });
-        map.setCenter(c); map.setZoom(z); marker.setMap(map);
-
-        // Guard: if still no tiles after switching, fall back
-        let ok = false;
-        const l = map.addListener("tilesloaded", () => { ok = true; google.maps.event.removeListener(l); });
-        setTimeout(() => { if (!ok) enableFallback(styleKey); }, 2500);
-      }
-    }
-
-    function enableFallback(styleKeyJustClicked){
-      usingFallback = true;
-      document.getElementById("warn").style.display = "block";
-      // Relabel tabs to make sense in fallback mode
-      const tabs = document.querySelectorAll(".tab");
-      tabs[0].textContent = "Roadmap";
-      tabs[1].textContent = "Satellite";
-      tabs[2].textContent = "Terrain";
-      // Apply fallback type immediately
-      const type = (styleKeyJustClicked === "style1") ? "roadmap" :
-                   (styleKeyJustClicked === "style2" ? "satellite" : "terrain");
-      const c = map.getCenter(); const z = map.getZoom();
-      map.setOptions({ mapTypeId: type, mapId: null });
-      map.setCenter(c); map.setZoom(z); marker.setMap(map);
-    }
 
     function showSpinner(show){
       const s = document.getElementById("spinner");
       s.style.display = show ? "inline-block" : "none";
       s.setAttribute("aria-hidden", show ? "false" : "true");
     }
-
     function clamp(val, min, max){ return Math.max(min, Math.min(max, val)); }
 
     function getViewportSize(){
@@ -218,22 +171,15 @@
 
       const params = new URLSearchParams({
         center: `${lat},${lng}`, zoom: String(zoom), size: `${w}x${h}`,
-        scale: "2", format: "png"
+        scale: "2", format: "png", map_id: MAP_IDS[currentStyleKey],
+        key: "AIzaSyCZskz6npeseDRcPLDbqaZZjwStCrwC3BQ"
       });
-
-      // Use map_id only if not in fallback
-      if (!usingFallback) params.set("map_id", MAP_IDS[currentStyleKey]);
-
-      // Your real Google API key
-      params.set("key", "AIzaSyCZskz6npeseDRcPLDbqaZZjwStCrwC3BQ");
-
       const url = `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}&${markers}`;
 
       fetch(url).then(r => r.blob()).then(blob => {
         const a = document.createElement("a");
-        const label = (usingFallback ? (currentStyleKey === "style1" ? "Roadmap" : currentStyleKey === "style2" ? "Satellite" : "Terrain") : currentStyleKey.toUpperCase());
         a.href = URL.createObjectURL(blob);
-        a.download = `sweet-hooligans-map-${label}-${Date.now()}.png`;
+        a.download = `sweet-hooligans-map-${currentStyleKey.toUpperCase()}-${Date.now()}.png`;
         document.body.appendChild(a); a.click(); a.remove();
         URL.revokeObjectURL(a.href);
       }).catch(err => { console.error(err); window.open(url, "_blank"); });
