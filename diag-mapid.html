@@ -1,0 +1,13 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>MapID Test</title>
+<style>html,body,#m{height:100%;margin:0}</style></head>
+<body><div id="m"></div>
+<script>
+  function initMap(){
+    new google.maps.Map(document.getElementById('m'), {
+      center:{lat:40.7128,lng:-74.0060}, zoom: 12,
+      mapId: "49e651064b8ea8d6947bd49c"
+    });
+  }
+</script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBviIcXPutnW2Y49AxXduizoHy2_c9QEcI&callback=initMap" async defer></script>
+</body></html>
