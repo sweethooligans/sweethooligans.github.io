@@ -2,12 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Sanity Check</title>
+  <title>Maps Smoke Test</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>html,body{height:100%;margin:0;font-family:system-ui;-webkit-font-smoothing:antialiased;text-align:center} .wrap{display:grid;place-items:center;height:100%}</style>
+  <style>html,body,#map{height:100%;margin:0} body{font-family:system-ui}</style>
+  <script>
+    function initMap(){
+      new google.maps.Map(document.getElementById('map'), {
+        center: {lat:40.7128, lng:-74.0060},
+        zoom: 12,
+        mapId: 'e39caf81ba4082b8',
+        mapTypeControl:false,
+        streetViewControl:false
+      });
+    }
+  </script>
 </head>
 <body>
-  <div class="wrap"><h1>It works!</h1><p>GitHub Pages is rendering HTML correctly.</p></div>
+  <div id="map"></div>
+  <!-- Your real key is already inserted here -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCZskz6npeseDRcPLDbqaZZjwStCrwC3BQ&callback=initMap" async defer></script>
 </body>
 </html>
-<!-- v1 -->
