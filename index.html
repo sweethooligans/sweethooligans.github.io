@@ -2,21 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Sweet Hooligans – Map Generator (Static)</title>
+  <title>Sweet Hooligans – Map Generator</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root{ --ui-bg: rgba(24,24,27,.7); --ui-border: rgba(255,255,255,.15); --ui-text: #fff; --accent: #4CAF50; }
+    :root{ --ui-bg: rgba(24,24,27,.7); --ui-border: rgba(255,255,255,.15); --ui-text:#fff; --accent:#4CAF50; }
     html,body{height:100%;margin:0}
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0b0b0d;color:#fff;overflow:hidden}
-    #wrap{position:fixed; inset:0; display:grid; place-items:center}
-    #mapImg{max-width:100vw; max-height:100vh; display:block; cursor:crosshair; background:#111}
+    #map{position:fixed;inset:0}
     .controls,.bottom-bar,.note{
       position:fixed;background:var(--ui-bg);border:1px solid var(--ui-border);
       backdrop-filter:blur(8px);border-radius:12px;z-index:10
     }
     .controls{top:12px;left:50%;transform:translateX(-50%);display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px}
-    .controls input[type="text"]{width:min(58vw,520px);max-width:90vw;background:rgba(255,255,255,.08);color:var(--ui-text);border:1px solid var(--ui-border);outline:none;border-radius:10px;padding:10px 12px;font-size:16px}
-    .btn{appearance:none;border:none;border-radius:10px;cursor:pointer;padding:10px 12px;font-weight:600;font-size:14px;background:rgba(255,255,255,.1);color:var(--ui-text);border:1px solid var(--ui-border);transition:transform .05s ease, background .2s}
+    .controls input{
+      width:min(58vw,520px);max-width:90vw;background:rgba(255,255,255,.08);color:var(--ui-text);
+      border:1px solid var(--ui-border);outline:none;border-radius:10px;padding:10px 12px;font-size:16px
+    }
+    .btn{
+      appearance:none;border:none;border-radius:10px;cursor:pointer;
+      padding:10px 12px;font-weight:600;font-size:14px;
+      background:rgba(255,255,255,.1);color:var(--ui-text);
+      border:1px solid var(--ui-border);transition:transform .05s ease, background .2s
+    }
     .btn:active{transform:translateY(1px)} .btn.primary{background:var(--accent)}
     .tabs{display:flex;gap:6px}
     .tab{padding:8px 10px;border-radius:10px;border:1px solid var(--ui-border);background:rgba(255,255,255,.08);cursor:pointer;font-size:13px}
@@ -25,17 +32,17 @@
     .note{right:12px;bottom:12px;font-size:12px;opacity:.75;padding:6px 8px}
     .spinner{width:18px;height:18px;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin 1s linear infinite;display:none}
     @keyframes spin{to{transform:rotate(360deg)}}
-    @media (max-width:640px){.controls input[type="text"]{width:58vw}.tabs{width:100%;justify-content:center}}
+    @media (max-width:640px){.controls input{width:58vw}.tabs{width:100%;justify-content:center}}
   </style>
 </head>
 <body>
-  <div id="wrap"><img id="mapImg" alt="Map preview"/></div>
+  <div id="map" role="application" aria-label="Map"></div>
 
   <!-- Top controls -->
   <div class="controls">
     <form id="address-form" style="display:contents">
       <input id="address" type="text" placeholder="Enter address (e.g., 1600 Pennsylvania Ave NW, DC)" />
-      <button class="btn primary" id="searchBtn" type="submit">Search</button>
+      <button class="btn primary" type="submit">Search</button>
     </form>
     <div class="tabs" aria-label="Map Styles">
       <button class="tab active" data-style="style1">Style 1</button>
@@ -54,341 +61,152 @@
     <button class="btn primary" id="downloadBtn">Download PNG</button>
   </div>
 
-  <div class="note">Tip: click the map to move the heart. (Static image view)</div>
+  <div class="note">Tip: drag the ❤️ to fine-tune the location.</div>
 
   <script>
-    // === Your 3 STYLE JSONs (as provided) ===
-    // (These are Google Cloud "cloud styles". We'll convert them to classic stylers and then to Static Maps style=)
-    const STYLE1_CLOUD = [
-      {"id":"infrastructure","geometry":{"visible":false},"label":{"visible":false}},
-      {"id":"infrastructure.building","geometry":{"visible":true}},
-      {"id":"infrastructure.businessCorridor","geometry":{"visible":false,"fillColor":"#e3e3e3"}},
-      {"id":"infrastructure.roadNetwork.road","geometry":{"visible":true,"fillColor":"#ebebeb"}},
-      {"id":"infrastructure.roadNetwork.road.highway","geometry":{"visible":true,"strokeColor":"#828282"},"label":{"visible":false,"textFillColor":"#383838"}},
-      {"id":"infrastructure.transitStation","label":{"textFillColor":"#8f8f8f","textStrokeColor":"#f5f5f5"}},
-      {"id":"natural","geometry":{"visible":true},"label":{"visible":true}},
-      {"id":"natural.archipelago","label":{"visible":false,"textFillColor":"#000000","textStrokeColor":"#ebebeb"}},
-      {"id":"natural.continent","label":{"visible":false,"textFillColor":"#000000"}},
-      {"id":"natural.island","label":{"visible":false,"textFillColor":"#ebebeb"}},
-      {"id":"natural.land","geometry":{"visible":true,"fillColor":"#ffffff"}},
-      {"id":"natural.land.landCover","geometry":{"visible":true,"fillColor":"#d6d6d6"}},
-      {"id":"natural.land.landCover.crops","geometry":{"visible":true,"fillColor":"#d6d6d6"}},
-      {"id":"natural.land.landCover.dryCrops","geometry":{"visible":true,"fillColor":"#c0c0c0"}},
-      {"id":"natural.land.landCover.forest","geometry":{"visible":false,"fillColor":"#ebebeb"}},
-      {"id":"natural.land.landCover.ice","geometry":{"visible":true,"fillColor":"#aaaaaa"}},
-      {"id":"natural.land.landCover.sand","geometry":{"visible":true}},
-      {"id":"natural.land.landCover.shrub","geometry":{"visible":true}},
-      {"id":"natural.land.landCover.tundra","geometry":{"visible":true}},
-      {"id":"natural.water","geometry":{"visible":true,"fillColor":"#7694a2"},"label":{"visible":false,"textFillColor":"#ffffff","textStrokeColor":"#7694a2"}},
-      {"id":"pointOfInterest","geometry":{"visible":false},"label":{"visible":false,"pinFillColor":"#9c9c9c","textFillColor":"#454545"}},
-      {"id":"pointOfInterest.emergency","geometry":{"visible":false},"label":{"visible":true}},
-      {"id":"pointOfInterest.emergency.hospital","geometry":{"visible":false},"label":{"visible":false}},
-      {"id":"pointOfInterest.emergency.pharmacy","label":{"visible":false}},
-      {"id":"pointOfInterest.entertainment","label":{"visible":false}},
-      {"id":"pointOfInterest.foodAndDrink","label":{"visible":false}},
-      {"id":"pointOfInterest.landmark","label":{"visible":false}},
-      {"id":"pointOfInterest.lodging","label":{"visible":false}},
-      {"id":"pointOfInterest.other.school","label":{"visible":false}},
-      {"id":"pointOfInterest.recreation","geometry":{"visible":false},"label":{"visible":false}},
-      {"id":"pointOfInterest.recreation.sportsComplex","geometry":{"visible":false}},
-      {"id":"pointOfInterest.retail","label":{"visible":false}},
-      {"id":"pointOfInterest.service","geometry":{"visible":false},"label":{"visible":false}},
-      {"id":"political","geometry":{"visible":false,"strokeColor":"#5c5c5c"},"label":{"visible":false}},
-      {"id":"political.city","label":{"textFillColor":"#383838"}}
-    ];
+    // ========= YOUR GOOGLE MAPS CONFIG =========
+    const API_KEY = "AIzaSyBviIcXPutnW2Y49AxXduizoHy2_c9QEcI"; // new project key
+    const MAP_IDS = {
+      style1: "49e651064b8ea8d6947bd49c", // Map Style 1
+      style2: "49e651064b8ea8d68e9a9d8b", // Map Style 2
+      style3: "49e651064b8ea8d625a41a78"  // Map Style 3
+    };
 
-    const STYLE2_CLOUD = [
-      {"id":"infrastructure","geometry":{"visible":false,"fillColor":"#ffffff","strokeColor":"#ffffff"},"label":{"visible":false}},
-      {"id":"infrastructure.building","geometry":{"visible":false}},
-      {"id":"infrastructure.businessCorridor","geometry":{"visible":false,"fillColor":"#e3e3e3"}},
-      {"id":"infrastructure.roadNetwork","geometry":{"fillColor":"#454545"}},
-      {"id":"infrastructure.roadNetwork.road","geometry":{"visible":true},"label":{"visible":false}},
-      {"id":"infrastructure.roadNetwork.road.arterial","label":{"visible":false}},
-      {"id":"infrastructure.roadNetwork.road.highway","geometry":{"visible":true,"strokeColor":"#828282"},"label":{"visible":false,"textFillColor":"#383838"}},
-      {"id":"infrastructure.roadNetwork.road.local","label":{"visible":false}},
-      {"id":"infrastructure.roadNetwork.road.noOutlet","label":{"visible":false}},
-      {"id":"infrastructure.transitStation","label":{"textFillColor":"#8f8f8f","textStrokeColor":"#f5f5f5"}},
-      {"id":"natural","geometry":{"visible":false,"fillColor":"#ffffff"},"label":{"visible":false}},
-      {"id":"natural.archipelago","label":{"textFillColor":"#c0c0c0","textStrokeColor":"#d6d6d6"}},
-      {"id":"natural.land","geometry":{"visible":true,"fillColor":"#dedede"}},
-      {"id":"natural.water","geometry":{"visible":true,"fillColor":"#ffffff"},"label":{"textFillColor":"#ffffff","textStrokeColor":"#ffffff"}},
-      {"id":"pointOfInterest","geometry":{"visible":false,"fillColor":"#ffffff"},"label":{"visible":false,"pinFillColor":"#9c9c9c","textFillColor":"#454545"}},
-      {"id":"pointOfInterest.emergency.hospital","geometry":{"visible":false},"label":{"visible":false}},
-      {"id":"pointOfInterest.emergency.pharmacy","label":{"visible":false}},
-      {"id":"pointOfInterest.other.school","label":{"visible":false}},
-      {"id":"pointOfInterest.recreation.sportsComplex","geometry":{"visible":false}},
-      {"id":"pointOfInterest.retail","label":{"visible":false}},
-      {"id":"pointOfInterest.service","geometry":{"visible":false},"label":{"visible":false}},
-      {"id":"political","geometry":{"visible":false,"fillColor":"#ffffff","strokeColor":"#5c5c5c"},"label":{"visible":false}},
-      {"id":"political.city","label":{"textFillColor":"#383838"}}
-    ];
-
-    const STYLE3_CLOUD = [
-      {"id":"infrastructure","geometry":{"visible":false,"fillColor":"#ffffff","strokeColor":"#ffffff"},"label":{"visible":false}},
-      {"id":"infrastructure.building","geometry":{"visible":false}},
-      {"id":"infrastructure.businessCorridor","geometry":{"visible":false,"fillColor":"#e3e3e3"}},
-      {"id":"infrastructure.roadNetwork","geometry":{"visible":false,"fillColor":"#454545"}},
-      {"id":"infrastructure.roadNetwork.road","geometry":{"visible":true},"label":{"visible":false}},
-      {"id":"infrastructure.roadNetwork.road.highway","geometry":{"visible":false,"strokeColor":"#828282"},"label":{"visible":false,"textFillColor":"#383838"}},
-      {"id":"infrastructure.transitStation","label":{"textFillColor":"#8f8f8f","textStrokeColor":"#f5f5f5"}},
-      {"id":"infrastructure.urbanArea","geometry":{"visible":false}},
-      {"id":"natural","geometry":{"visible":false,"fillColor":"#ffffff"},"label":{"visible":false}},
-      {"id":"natural.land","geometry":{"visible":true}},
-      {"id":"natural.water","geometry":{"visible":false,"fillColor":"#aaaaaa"},"label":{"visible":false,"textFillColor":"#ffffff","textStrokeColor":"#aaaaaa"}},
-      {"id":"pointOfInterest","geometry":{"visible":false,"fillColor":"#ffffff"},"label":{"visible":false,"pinFillColor":"#9c9c9c","textFillColor":"#454545"}},
-      {"id":"pointOfInterest.emergency.hospital","geometry":{"visible":false},"label":{"visible":false}},
-      {"id":"pointOfInterest.emergency.pharmacy","label":{"visible":false}},
-      {"id":"pointOfInterest.other.school","label":{"visible":false}},
-      {"id":"pointOfInterest.recreation.sportsComplex","geometry":{"visible":false}},
-      {"id":"pointOfInterest.retail","label":{"visible":false}},
-      {"id":"pointOfInterest.service","geometry":{"visible":false},"label":{"visible":false}},
-      {"id":"political","geometry":{"visible":false,"fillColor":"#ffffff","strokeColor":"#5c5c5c"},"label":{"visible":false}},
-      {"id":"political.city","label":{"textFillColor":"#383838"}}
-    ];
-
-    // === Config ===
     const HEART_ICON = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Heart_coraz%C3%B3n.svg/1920px-Heart_coraz%C3%B3n.svg.png";
-    const GOOGLE_API_KEY = "AIzaSyCZskz6npeseDRcPLDbqaZZjwStCrwC3BQ"; // your key
     const DEFAULT_CENTER = { lat: 40.7128, lng: -74.0060 };
     const DEFAULT_ZOOM = 12;
 
-    // --- Cloud JSON -> classic stylers (approx mapping) ---
-    function cloudToClassic(cloudArr){
-      const out = [];
-      const mapFeature = (id) => {
-        if (!id) return null;
-        if (id.startsWith("natural.water")) return "water";
-        if (id.startsWith("natural.land")) return "landscape";
-        if (id.startsWith("natural")) return "landscape";
-        if (id.includes("roadNetwork.road.highway")) return "road.highway";
-        if (id.includes("roadNetwork.road.arterial")) return "road.arterial";
-        if (id.includes("roadNetwork.road.local")) return "road.local";
-        if (id.includes("roadNetwork.road")) return "road";
-        if (id.includes("transitStation")) return "transit.station";
-        if (id.startsWith("infrastructure.building")) return "landscape.man_made";
-        if (id.startsWith("pointOfInterest")) return "poi";
-        if (id.startsWith("political.city")) return "administrative.locality";
-        if (id.startsWith("political")) return "administrative";
-        if (id.startsWith("infrastructure")) return "road";
-        return null;
-      };
-      const pushRule = (featureType, elementType, stylers) => {
-        if (!featureType || !elementType || !stylers || !stylers.length) return;
-        out.push({ featureType, elementType, stylers });
-      };
-      for (const entry of cloudArr || []){
-        const ft = mapFeature(entry.id);
-        if (entry.geometry){
-          if ("visible" in entry.geometry){
-            pushRule(ft, "geometry", [{ visibility: entry.geometry.visible ? "on" : "off" }]);
-          }
-          if (entry.geometry.fillColor){
-            pushRule(ft, "geometry.fill", [{ color: entry.geometry.fillColor }]);
-          }
-          if (entry.geometry.strokeColor){
-            pushRule(ft, "geometry.stroke", [{ color: entry.geometry.strokeColor }]);
-          }
-        }
-        if (entry.label){
-          if ("visible" in entry.label){
-            pushRule(ft, "labels", [{ visibility: entry.label.visible ? "on" : "off" }]);
-          }
-          if (entry.label.textFillColor){
-            pushRule(ft, "labels.text.fill", [{ color: entry.label.textFillColor }]);
-          }
-          if (entry.label.textStrokeColor){
-            pushRule(ft, "labels.text.stroke", [{ color: entry.label.textStrokeColor }]);
-          }
-        }
-      }
-      return out;
-    }
+    let map, marker, geocoder;
+    let currentStyleKey = "style1";
 
-    // --- classic stylers -> Static Maps style= params ---
-    function classicToStaticParams(classicArr){
-      const params = [];
-      for (const r of classicArr || []){
-        const parts = [];
-        if (r.featureType) parts.push(`feature:${r.featureType}`);
-        if (r.elementType) parts.push(`element:${r.elementType}`);
-        if (Array.isArray(r.stylers)){
-          for (const st of r.stylers){
-            const [k,v] = Object.entries(st)[0] || [];
-            if(!k) continue;
-            if (k === "visibility"){ parts.push(`visibility:${v}`); }
-            else if (k === "color"){ parts.push(`color:${String(v).replace("#","0x")}`); }
-            else if (k === "saturation"){ parts.push(`saturation:${v}`); }
-            else if (k === "lightness"){ parts.push(`lightness:${v}`); }
-            else if (k === "gamma"){ parts.push(`gamma:${v}`); }
-            else if (k === "weight"){ parts.push(`weight:${v}`); }
-            else if (k === "invert_lightness"){ parts.push(`invert_lightness:${v ? "true" : "false"}`); }
-          }
-        }
-        if (parts.length) params.push(parts.join("|"));
-      }
-      return params;
-    }
-
-    const CLOUD_BY_KEY = { style1: STYLE1_CLOUD, style2: STYLE2_CLOUD, style3: STYLE3_CLOUD };
-    function getStaticStyleParams(styleKey){
-      return classicToStaticParams(cloudToClassic(CLOUD_BY_KEY[styleKey] || []));
-    }
-
-    // --- Static map state ---
-    const state = {
-      center: {...DEFAULT_CENTER},
-      zoom: DEFAULT_ZOOM,
-      styleKey: "style1",
-      marker: {...DEFAULT_CENTER}
-    };
-
-    // --- Build Static Maps URL ---
-    function buildStaticUrl(){
-      const maxBase = 640; // Static Maps free max base size
-      const scale = 2;     // retina
-      const img = document.getElementById("mapImg");
-      const vw = Math.min(maxBase, Math.round(window.innerWidth));
-      const vh = Math.min(maxBase, Math.round(window.innerHeight));
-      const w = Math.max(320, vw);
-      const h = Math.max(320, vh);
-
-      const params = new URLSearchParams({
-        center: `${state.center.lat},${state.center.lng}`,
-        zoom: String(Math.max(0, Math.min(21, state.zoom))),
-        size: `${w}x${h}`,
-        scale: String(scale),
-        format: "png",
-        key: GOOGLE_API_KEY
-      });
-
-      // Add style= parameters from your JSON
-      const styles = getStaticStyleParams(state.styleKey);
-      for (const s of styles){ params.append("style", s); }
-
-      // Heart marker
-      const icon = encodeURIComponent(HEART_ICON);
-      params.append("markers", `icon:${icon}|${state.marker.lat},${state.marker.lng}`);
-
-      const url = `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
-      return { url, w: w*scale, h: h*scale };
-    }
-
-    // --- Render image ---
-    function render(){
-      const { url } = buildStaticUrl();
-      const img = document.getElementById("mapImg");
-      img.src = url;
-      document.getElementById("zoomLevel").textContent = state.zoom;
-    }
-
-    // --- Simple mercator projection to place marker by click ---
-    const TILE_SIZE = 256;
-    function lng2x(lng, z){ return (lng + 180) / 360 * (TILE_SIZE * Math.pow(2, z)); }
-    function lat2y(lat, z){
-      const sin = Math.sin(lat * Math.PI / 180);
-      const y = Math.log((1 + sin) / (1 - sin)) / 2;
-      return (1 - y / Math.PI) / 2 * (TILE_SIZE * Math.pow(2, z));
-    }
-    function x2lng(x, z){ return x / (TILE_SIZE * Math.pow(2, z)) * 360 - 180; }
-    function y2lat(y, z){
-      const n = Math.PI - 2 * Math.PI * y / (TILE_SIZE * Math.pow(2, z));
-      return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
-    }
-
-    function clickToLatLng(ev){
-      const rect = ev.target.getBoundingClientRect();
-      const xClick = ev.clientX - rect.left;
-      const yClick = ev.clientY - rect.top;
-      const imgW = rect.width, imgH = rect.height;
-
-      const cx = lng2x(state.center.lng, state.zoom);
-      const cy = lat2y(state.center.lat, state.zoom);
-
-      const dx = (xClick - imgW/2) * (TILE_SIZE / 256) * 2; // rough scale
-      const dy = (yClick - imgH/2) * (TILE_SIZE / 256) * 2;
-
-      const x = cx + dx;
-      const y = cy + dy;
-
-      return { lat: y2lat(y, state.zoom), lng: x2lng(x, state.zoom) };
-    }
-
-    // --- UI wiring ---
-    window.addEventListener("resize", render);
-
-    document.getElementById("mapImg").addEventListener("click", (e)=>{
-      const p = clickToLatLng(e);
-      if (isFinite(p.lat) && isFinite(p.lng)){
-        state.marker = p;
-        render();
-      }
-    });
-
-    document.getElementById("zoomIn").addEventListener("click", ()=>{ state.zoom = Math.min(21, state.zoom+1); render(); });
-    document.getElementById("zoomOut").addEventListener("click", ()=>{ state.zoom = Math.max(0, state.zoom-1); render(); });
-    document.getElementById("centerMarker").addEventListener("click", ()=>{ state.center = {...state.marker}; render(); });
-
-    // Style tabs
-    document.querySelectorAll(".tab").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
-        btn.classList.add("active");
-        state.styleKey = btn.dataset.style;
-        render();
-      });
-    });
-
-    // Address search: try Google Geocoding via Static endpoint? (No CORS)
-    // We'll use Nominatim (free) client-side for reliability, then render Google Static map with your styling.
-    const NOMINATIM = "https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=0&q=";
     function showSpinner(show){
       const s = document.getElementById("spinner");
       s.style.display = show ? "inline-block" : "none";
       s.setAttribute("aria-hidden", show ? "false" : "true");
     }
-    document.getElementById("address-form").addEventListener("submit", async (e)=>{
-      e.preventDefault();
-      const q = document.getElementById("address").value.trim();
-      if(!q) return;
-      showSpinner(true);
-      try{
-        const res = await fetch(NOMINATIM + encodeURIComponent(q), { headers: { "Accept":"application/json" }});
-        const data = await res.json();
-        if (data && data.length){
-          const lat = parseFloat(data[0].lat), lng = parseFloat(data[0].lon);
-          state.center = { lat, lng };
-          state.marker = { lat, lng };
-          if (state.zoom < 14) state.zoom = 14;
-          render();
-        } else {
-          alert("Address not found.");
-        }
-      }catch(err){
-        console.error(err);
-        alert("Search failed. Try again.");
-      }finally{
-        showSpinner(false);
-      }
-    });
+    function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
-    // Download PNG (same URL)
-    document.getElementById("downloadBtn").addEventListener("click", ()=>{
-      const { url } = buildStaticUrl();
-      fetch(url).then(r => r.blob()).then(blob=>{
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `sweet-hooligans-map-${state.styleKey.toUpperCase()}-${Date.now()}.png`;
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(a.href);
-      }).catch(err=>{
-        console.error(err);
-        // If blocked by CORS, just open in a new tab and let the user save
-        window.open(url, "_blank");
+    // Build a Static Maps URL that mirrors the current view (for PNG download)
+    function buildStaticUrl(){
+      const center = map.getCenter();
+      const lat = center.lat(), lng = center.lng();
+      const zoom = clamp(map.getZoom(), 0, 21);
+
+      // Size within Static Maps constraints
+      const rect = document.getElementById("map").getBoundingClientRect();
+      const maxBase = 640, scale = 2;
+      let w = Math.min(maxBase, Math.round(rect.width));  w = Math.max(320, w);
+      let h = Math.min(maxBase, Math.round(rect.height)); h = Math.max(320, h);
+
+      const params = new URLSearchParams({
+        center: `${lat},${lng}`,
+        zoom: String(zoom),
+        size: `${w}x${h}`,
+        scale: String(scale),
+        format: "png",
+        map_id: MAP_IDS[currentStyleKey], // ensures the PNG uses the same cloud style
+        key: API_KEY
       });
-    });
 
-    // Initial render
-    render();
+      const p = marker.getPosition();
+      const icon = encodeURIComponent(HEART_ICON);
+      params.append("markers", `icon:${icon}|${p.lat()},${p.lng()}`);
+
+      return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+    }
+
+    // Create a map configured for a given style key
+    function optionsForStyle(styleKey){
+      return {
+        center: DEFAULT_CENTER,
+        zoom: DEFAULT_ZOOM,
+        mapId: MAP_IDS[styleKey],
+        mapTypeControl:false, streetViewControl:false, fullscreenControl:false, clickableIcons:false
+      };
+    }
+
+    // Google callback must be global
+    window.initMap = function(){
+      geocoder = new google.maps.Geocoder();
+
+      map = new google.maps.Map(document.getElementById("map"), optionsForStyle(currentStyleKey));
+
+      marker = new google.maps.Marker({
+        position: DEFAULT_CENTER,
+        map,
+        draggable: true,
+        icon: { url: HEART_ICON, scaledSize: new google.maps.Size(34,34) },
+        title: "Drag me to adjust"
+      });
+
+      map.addListener("zoom_changed", () => {
+        document.getElementById("zoomLevel").textContent = map.getZoom();
+      });
+
+      // Address search
+      document.getElementById("address-form").addEventListener("submit", (e)=>{
+        e.preventDefault();
+        const addr = document.getElementById("address").value.trim();
+        if(!addr) return;
+        showSpinner(true);
+        geocoder.geocode({ address: addr }, (results, status)=>{
+          showSpinner(false);
+          if(status === "OK" && results[0]){
+            const loc = results[0].geometry.location;
+            map.panTo(loc);
+            marker.setPosition(loc);
+            if(map.getZoom() < 14) map.setZoom(14);
+          }else{
+            alert("Address not found: " + status);
+          }
+        });
+      });
+
+      // Style tabs — rebuild the map so the new mapId takes effect cleanly
+      document.querySelectorAll(".tab").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          if (btn.classList.contains("active")) return;
+          document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
+          btn.classList.add("active");
+          currentStyleKey = btn.dataset.style;
+
+          const c = map.getCenter(), z = map.getZoom();
+          const mPos = marker.getPosition();
+
+          map = new google.maps.Map(document.getElementById("map"), optionsForStyle(currentStyleKey));
+          map.setCenter(c); map.setZoom(z);
+
+          marker = new google.maps.Marker({
+            position: mPos, map, draggable: true,
+            icon: { url: HEART_ICON, scaledSize: new google.maps.Size(34,34) }
+          });
+
+          map.addListener("zoom_changed", () => {
+            document.getElementById("zoomLevel").textContent = map.getZoom();
+          });
+        });
+      });
+
+      // Zoom + center
+      document.getElementById("zoomIn").addEventListener("click", ()=> map.setZoom(map.getZoom()+1));
+      document.getElementById("zoomOut").addEventListener("click", ()=> map.setZoom(map.getZoom()-1));
+      document.getElementById("centerMarker").addEventListener("click", ()=> map.panTo(marker.getPosition()));
+
+      // Download PNG
+      document.getElementById("downloadBtn").addEventListener("click", ()=>{
+        const url = buildStaticUrl();
+        fetch(url).then(r=>r.blob()).then(blob=>{
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = `sweet-hooligans-map-${currentStyleKey.toUpperCase()}-${Date.now()}.png`;
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(a.href);
+        }).catch(err=>{ console.error(err); window.open(url,"_blank"); });
+      });
+    };
   </script>
+
+  <!-- Load Google Maps AFTER defining initMap -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBviIcXPutnW2Y49AxXduizoHy2_c9QEcI&callback=initMap&v=weekly" async defer></script>
 </body>
 </html>
