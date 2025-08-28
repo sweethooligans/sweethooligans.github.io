@@ -5,7 +5,6 @@
   <title>Sweet Hooligans – Map Generator</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    /* Keep it simple and stable: no transforms, no blurs, no fancy effects */
     html, body { height: 100%; margin: 0; background: #0b0b0d; color: #fff;
       font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
     #map { width: 100%; height: 100vh; position: relative; background: #000; }
@@ -59,18 +58,36 @@
       style2: "49e651064b8ea8d68e9a9d8b",
       style3: "49e651064b8ea8d625a41a78"
     };
-    const HEART_ICON = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Heart_coraz%C3%B3n.svg/1920px-Heart_coraz%C3%B3n.svg.png";
     const DEFAULT_CENTER = { lat: 40.7128, lng: -74.0060 };
     const DEFAULT_ZOOM = 12;
+
+    // Red heart marker icon for the live map
+    const HEART_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Heart_coraz%C3%B3n.svg/1920px-Heart_coraz%C3%B3n.svg.png";
 
     let map, marker, geocoder;
     let currentStyleKey = "style1";
 
     function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
 
-    // Build Static Maps URL for PNG download (uses same map_id as live map)
+    // Mercator helpers for PNG overlay
+    const TILE_SIZE = 256;
+    function worldSize(z){ return TILE_SIZE * Math.pow(2, z); }
+    function lng2x(lng, z){ return (lng + 180) / 360 * worldSize(z); }
+    function lat2y(lat, z){
+      const s = Math.sin(lat * Math.PI / 180);
+      const y = Math.log((1 + s) / (1 - s)) / 2;
+      return (1 - y / Math.PI) / 2 * worldSize(z);
+    }
+    function x2lng(x, z){ return x / worldSize(z) * 360 - 180; }
+    function y2lat(y, z){
+      const n = Math.PI - 2 * Math.PI * y / worldSize(z);
+      return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+    }
+
+    // Build Static Maps URL (no markers—avoid static error overlay)
     function buildStaticUrl(){
-      const c = map.getCenter(), z = clamp(map.getZoom(), 0, 21);
+      const c = map.getCenter();
+      const z = clamp(map.getZoom(), 0, 21);
       const rect = document.getElementById("map").getBoundingClientRect();
       const maxBase = 640, scale = 2;
       let w = Math.min(maxBase, Math.round(rect.width));  w = Math.max(320, w);
@@ -82,30 +99,85 @@
         size: `${w}x${h}`,
         scale: String(scale),
         format: "png",
-        map_id: MAP_IDS[currentStyleKey],
+        map_id: MAP_IDS[currentStyleKey], // uses your cloud style
         key: API_KEY
       });
-      const p = marker.getPosition();
-      const icon = encodeURIComponent(HEART_ICON);
-      params.append("markers", `icon:${icon}|${p.lat()},${p.lng()}`);
-      return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+      return { url: `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`, w: w*scale, h: h*scale, z, center: {lat:c.lat(), lng:c.lng()} };
     }
 
-    function switchStyle(styleKey){
-      currentStyleKey = styleKey;
-      // Safest way: update mapId live (no re-creation)
-      map.setOptions({ mapId: MAP_IDS[styleKey] });
-      // keep center/zoom/marker as-is
+    // Draw a vector heart onto a canvas at given pixel
+    function drawHeart(ctx, x, y, size){
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(size, size);
+      ctx.beginPath();
+      // parametric heart shape (simple)
+      // top lobes
+      ctx.moveTo(0, -0.25);
+      ctx.bezierCurveTo(0.25, -0.55, 0.75, -0.35, 0.75, 0.05);
+      ctx.bezierCurveTo(0.75, 0.4, 0.4, 0.6, 0, 0.9);
+      ctx.bezierCurveTo(-0.4, 0.6, -0.75, 0.4, -0.75, 0.05);
+      ctx.bezierCurveTo(-0.75, -0.35, -0.25, -0.55, 0, -0.25);
+      ctx.closePath();
+      ctx.fillStyle = "#E53935"; // red
+      ctx.fill();
+      ctx.lineWidth = 0.08;
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.stroke();
+      ctx.restore();
     }
 
-    // Global callback for Google loader
-    window.initMap = function(){
-      geocoder = new google.maps.Geocoder();
+    // Download PNG: fetch Static Maps image (styled via map_id), then paint a heart at marker position
+    async function downloadPNG(){
+      const { url, w, h, z, center } = buildStaticUrl();
+      // Compute marker pixel in the static map image
+      const centerX = lng2x(center.lng, z);
+      const centerY = lat2y(center.lat, z);
+      const m = marker.getPosition();
+      const mX = lng2x(m.lng(), z);
+      const mY = lat2y(m.lat(), z);
 
-      map = new google.maps.Map(document.getElementById("map"), {
-        center: DEFAULT_CENTER,
-        zoom: DEFAULT_ZOOM,
-        mapId: MAP_IDS[currentStyleKey],
+      const dxWorld = (mX - centerX);
+      const dyWorld = (mY - centerY);
+      const scale = 2; // we used scale=2 above
+      const pxX = w/2 + dxWorld * scale;
+      const pxY = h/2 + dyWorld * scale;
+
+      try{
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        const img = await new Promise((res, rej)=>{
+          const im = new Image();
+          im.onload = ()=> res(im);
+          im.onerror = rej;
+          im.src = URL.createObjectURL(blob);
+        });
+
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+
+        // Draw the heart (size tuned for ~34px marker; adjust if you want larger)
+        drawHeart(ctx, pxX, pxY - 12, 14); // x,y,size(px) with slight vertical offset
+
+        const a = document.createElement("a");
+        a.href = canvas.toDataURL("image/png");
+        a.download = `sweet-hooligans-map-${currentStyleKey.toUpperCase()}-${Date.now()}.png`;
+        document.body.appendChild(a); a.click(); a.remove();
+      }catch(e){
+        console.error(e);
+        // Fallback: open raw static URL (will lack heart overlay)
+        window.open(url, "_blank");
+      }
+    }
+
+    function recreateMap(styleKey, center, zoom, markerPos){
+      const mapDiv = document.getElementById("map");
+      map = new google.maps.Map(mapDiv, {
+        center: center || DEFAULT_CENTER,
+        zoom: zoom ?? DEFAULT_ZOOM,
+        mapId: MAP_IDS[styleKey],
         clickableIcons: false,
         gestureHandling: "greedy",
         mapTypeControl: false,
@@ -114,16 +186,22 @@
       });
 
       marker = new google.maps.Marker({
-        position: DEFAULT_CENTER,
+        position: markerPos || center || DEFAULT_CENTER,
         map,
         draggable: true,
-        icon: { url: HEART_ICON, scaledSize: new google.maps.Size(34,34) },
+        icon: { url: HEART_ICON_URL, scaledSize: new google.maps.Size(34,34) },
         title: "Drag me to adjust"
       });
 
       map.addListener("zoom_changed", () => {
         document.getElementById("zoomLevel").textContent = map.getZoom();
       });
+    }
+
+    // Global callback for Google loader
+    window.initMap = function(){
+      geocoder = new google.maps.Geocoder();
+      recreateMap(currentStyleKey);
 
       // Address search
       document.getElementById("address-form").addEventListener("submit", (e)=>{
@@ -142,13 +220,16 @@
         });
       });
 
-      // Style tabs (update mapId in-place)
+      // Style tabs — recreate map (most reliable for switching styles)
       document.querySelectorAll(".tab").forEach(btn=>{
         btn.addEventListener("click", ()=>{
           if (btn.classList.contains("active")) return;
           document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
           btn.classList.add("active");
-          switchStyle(btn.dataset.style);
+
+          currentStyleKey = btn.dataset.style;
+          const c = map.getCenter(), z = map.getZoom(), mPos = marker.getPosition();
+          recreateMap(currentStyleKey, c, z, mPos);
         });
       });
 
@@ -157,24 +238,15 @@
       document.getElementById("zoomOut").addEventListener("click", ()=> map.setZoom(map.getZoom()-1));
       document.getElementById("centerMarker").addEventListener("click", ()=> map.panTo(marker.getPosition()));
 
-      // Download PNG (Static Maps)
-      document.getElementById("downloadBtn").addEventListener("click", ()=>{
-        const url = buildStaticUrl();
-        fetch(url).then(r=>r.blob()).then(blob=>{
-          const a = document.createElement("a");
-          a.href = URL.createObjectURL(blob);
-          a.download = `sweet-hooligans-map-${currentStyleKey.toUpperCase()}-${Date.now()}.png`;
-          document.body.appendChild(a); a.click(); a.remove();
-          URL.revokeObjectURL(a.href);
-        }).catch(()=>{ window.open(url, "_blank"); });
-      });
+      // Download PNG (styled; with heart overlay we draw ourselves)
+      document.getElementById("downloadBtn").addEventListener("click", downloadPNG);
 
-      // Ensure proper sizing if viewport changes
+      // Proper sizing on viewport change
       window.addEventListener("resize", ()=> google.maps.event.trigger(map, "resize"));
     };
   </script>
 
-  <!-- Load Google Maps after defining initMap (no v=weekly; use stable channel) -->
+  <!-- Load Google Maps after defining initMap -->
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBviIcXPutnW2Y49AxXduizoHy2_c9QEcI&callback=initMap" async defer></script>
 </body>
 </html>
