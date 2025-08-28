@@ -4,14 +4,6 @@
   <meta charset="utf-8" />
   <title>Sweet Hooligans – Map Generator (Screenshot Mode)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!--
-    Screenshot tips (Chrome):
-    1) Click "Clean View" to hide UI.
-    2) Open DevTools (Ctrl/Cmd+Shift+I) → Device Toolbar (Ctrl/Cmd+Shift+M).
-    3) Set a custom size (e.g., 5120×2880) and DPR=2 for ultra crisp.
-    4) Ctrl/Cmd+Shift+P → "Capture node screenshot" → select #map.
-    5) Or use your OS screenshot tool while Clean View is on.
-  -->
   <style>
     html, body { height: 100%; margin: 0; background: #0b0b0d; color: #fff;
       font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
@@ -69,7 +61,7 @@
         <button class="tab" data-style="style2" type="button">Style 2</button>
         <button class="tab" data-style="style3" type="button">Style 3</button>
       </div>
-      <button class="btn" id="cleanToggle" type="button" title="Hide UI for clean screenshot (hotkey: C)">Clean View</button>
+      <button class="btn" id="cleanToggle" type="button" title="Hide UI for clean screenshot (hotkeys: ⌘+C or Shift+C)">Clean View</button>
     </form>
   </div>
 
@@ -80,7 +72,7 @@
     <button class="btn" id="centerMarker" type="button">Center to Marker</button>
   </div>
 
-  <div class="note">Tip: drag the ❤️ to fine-tune the location. Press <b>C</b> for Clean View.</div>
+  <div class="note">Tip: drag the ❤️ to fine-tune the location. Hotkeys: <b>⌘+C</b> or <b>Shift+C</b> for Clean View.</div>
 
   <script>
     // ===== CONFIG: your key + Map IDs =====
@@ -124,6 +116,13 @@
       });
     }
 
+    // Clean View toggle
+    function toggleClean(){
+      document.body.classList.toggle("clean");
+      document.getElementById("cleanToggle").textContent =
+        document.body.classList.contains("clean") ? "Exit Clean View" : "Clean View";
+    }
+
     // Google callback
     window.initMap = function(){
       geocoder = new google.maps.Geocoder();
@@ -164,18 +163,37 @@
       document.getElementById("zoomOut").addEventListener("click", ()=> map.setZoom(map.getZoom()-1));
       document.getElementById("centerMarker").addEventListener("click", ()=> map.panTo(marker.getPosition()));
 
-      // Clean View toggle + hotkey
-      function toggleClean(){
-        document.body.classList.toggle("clean");
-        document.getElementById("cleanToggle").textContent =
-          document.body.classList.contains("clean") ? "Exit Clean View" : "Clean View";
-      }
+      // Clean View button
       document.getElementById("cleanToggle").addEventListener("click", toggleClean);
-      window.addEventListener("keydown", (e)=> { if(e.key.toLowerCase()==="c") toggleClean(); });
+
+      // Hotkeys: ⌘+C or Shift+C (outside inputs only; don't interfere with copy)
+      window.addEventListener("keydown", (e)=>{
+        const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : "";
+        const isTyping = tag === "input" || tag === "textarea" || (e.target && e.target.isContentEditable);
+
+        // Only react when NOT typing into a field
+        if (isTyping) return;
+
+        const k = e.key.toLowerCase();
+
+        // If user is copying selected text, let it pass (don't toggle)
+        const hasSelection = !!(window.getSelection && window.getSelection().toString());
+
+        // ⌘+C (Mac) — metaKey
+        if (!isTyping && k === "c" && e.metaKey) {
+          if (!hasSelection) { e.preventDefault(); toggleClean(); }
+          return;
+        }
+
+        // Shift+C
+        if (!isTyping && k === "c" && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          toggleClean();
+        }
+      });
 
       // Keep zoom indicator correct
       document.getElementById("zoomLevel").textContent = map.getZoom();
-      map.addEventListener?.("resize", ()=>{}) // noop for future
       window.addEventListener("resize", ()=> google.maps.event.trigger(map, "resize"));
     };
   </script>
