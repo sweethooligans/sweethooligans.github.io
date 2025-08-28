@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Sweet Hooligans – Map Generator</title>
+  <title>Sweet Hooligans – Map Generator (Hi-Res Export)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html, body { height: 100%; margin: 0; background: #0b0b0d; color: #fff;
@@ -23,6 +23,8 @@
     .tab.active { background: #4CAF50; }
     .note { position: absolute; right: 12px; bottom: 70px; font-size: 12px; opacity: .85; background: rgba(24,24,27,.9);
             border: 1px solid rgba(255,255,255,.15); border-radius: 10px; padding: 6px 8px; z-index: 5; }
+    select { background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.2);
+             border-radius: 10px; padding: 8px 10px; font-size: 14px; outline: none; }
   </style>
 </head>
 <body>
@@ -45,31 +47,42 @@
     <span id="zoomLevel" style="min-width:3ch;text-align:center">12</span>
     <button class="btn" id="zoomIn" type="button">+</button>
     <button class="btn" id="centerMarker" type="button">Center to Marker</button>
+
+    <!-- Choose export size (long side in pixels). 4096 is a great print-ready default. -->
+    <label for="exportSize">PNG size:</label>
+    <select id="exportSize">
+      <option value="1280">1280 (quick)</option>
+      <option value="2560">2560 (sharp)</option>
+      <option value="3840">3840 (4K)</option>
+      <option value="4096" selected>4096 (hi-res)</option>
+      <option value="5120">5120 (ultra)</option>
+    </select>
+
     <button class="btn primary" id="downloadBtn" type="button">Download PNG</button>
   </div>
 
   <div class="note">Tip: drag the ❤️ to fine-tune the location.</div>
 
   <script>
-    // ===== CONFIG: your new key + Map IDs =====
+    // ===== CONFIG: your key + Map IDs =====
     const API_KEY = "AIzaSyBviIcXPutnW2Y49AxXduizoHy2_c9QEcI";
     const MAP_IDS = {
       style1: "49e651064b8ea8d6947bd49c",
       style2: "49e651064b8ea8d68e9a9d8b",
       style3: "49e651064b8ea8d625a41a78"
     };
+
+    // Live marker icon (same image used on screen and in export)
+    const HEART_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Heart_coraz%C3%B3n.svg/1920px-Heart_coraz%C3%B3n.svg.png";
+    const HEART_SCREEN_PX = 34; // on-screen marker size in CSS px
+
     const DEFAULT_CENTER = { lat: 40.7128, lng: -74.0060 };
     const DEFAULT_ZOOM = 12;
-
-    // Red heart marker icon for the live map
-    const HEART_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Heart_coraz%C3%B3n.svg/1920px-Heart_coraz%C3%B3n.svg.png";
 
     let map, marker, geocoder;
     let currentStyleKey = "style1";
 
-    function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
-
-    // Mercator helpers for PNG overlay
+    // --- Mercator helpers (base tile size = 256) ---
     const TILE_SIZE = 256;
     function worldSize(z){ return TILE_SIZE * Math.pow(2, z); }
     function lng2x(lng, z){ return (lng + 180) / 360 * worldSize(z); }
@@ -83,98 +96,11 @@
       const n = Math.PI - 2 * Math.PI * y / worldSize(z);
       return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
     }
+    function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
 
-    // Build Static Maps URL (no markers—avoid static error overlay)
-    function buildStaticUrl(){
-      const c = map.getCenter();
-      const z = clamp(map.getZoom(), 0, 21);
-      const rect = document.getElementById("map").getBoundingClientRect();
-      const maxBase = 640, scale = 2;
-      let w = Math.min(maxBase, Math.round(rect.width));  w = Math.max(320, w);
-      let h = Math.min(maxBase, Math.round(rect.height)); h = Math.max(320, h);
-
-      const params = new URLSearchParams({
-        center: `${c.lat()},${c.lng()}`,
-        zoom: String(z),
-        size: `${w}x${h}`,
-        scale: String(scale),
-        format: "png",
-        map_id: MAP_IDS[currentStyleKey], // uses your cloud style
-        key: API_KEY
-      });
-      return { url: `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`, w: w*scale, h: h*scale, z, center: {lat:c.lat(), lng:c.lng()} };
-    }
-
-    // Draw a vector heart onto a canvas at given pixel
-    function drawHeart(ctx, x, y, size){
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.scale(size, size);
-      ctx.beginPath();
-      // parametric heart shape (simple)
-      // top lobes
-      ctx.moveTo(0, -0.25);
-      ctx.bezierCurveTo(0.25, -0.55, 0.75, -0.35, 0.75, 0.05);
-      ctx.bezierCurveTo(0.75, 0.4, 0.4, 0.6, 0, 0.9);
-      ctx.bezierCurveTo(-0.4, 0.6, -0.75, 0.4, -0.75, 0.05);
-      ctx.bezierCurveTo(-0.75, -0.35, -0.25, -0.55, 0, -0.25);
-      ctx.closePath();
-      ctx.fillStyle = "#E53935"; // red
-      ctx.fill();
-      ctx.lineWidth = 0.08;
-      ctx.strokeStyle = "rgba(255,255,255,0.9)";
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // Download PNG: fetch Static Maps image (styled via map_id), then paint a heart at marker position
-    async function downloadPNG(){
-      const { url, w, h, z, center } = buildStaticUrl();
-      // Compute marker pixel in the static map image
-      const centerX = lng2x(center.lng, z);
-      const centerY = lat2y(center.lat, z);
-      const m = marker.getPosition();
-      const mX = lng2x(m.lng(), z);
-      const mY = lat2y(m.lat(), z);
-
-      const dxWorld = (mX - centerX);
-      const dyWorld = (mY - centerY);
-      const scale = 2; // we used scale=2 above
-      const pxX = w/2 + dxWorld * scale;
-      const pxY = h/2 + dyWorld * scale;
-
-      try{
-        const resp = await fetch(url);
-        const blob = await resp.blob();
-        const img = await new Promise((res, rej)=>{
-          const im = new Image();
-          im.onload = ()=> res(im);
-          im.onerror = rej;
-          im.src = URL.createObjectURL(blob);
-        });
-
-        const canvas = document.createElement("canvas");
-        canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-
-        // Draw the heart (size tuned for ~34px marker; adjust if you want larger)
-        drawHeart(ctx, pxX, pxY - 12, 14); // x,y,size(px) with slight vertical offset
-
-        const a = document.createElement("a");
-        a.href = canvas.toDataURL("image/png");
-        a.download = `sweet-hooligans-map-${currentStyleKey.toUpperCase()}-${Date.now()}.png`;
-        document.body.appendChild(a); a.click(); a.remove();
-      }catch(e){
-        console.error(e);
-        // Fallback: open raw static URL (will lack heart overlay)
-        window.open(url, "_blank");
-      }
-    }
-
+    // Recreate map (reliable for style switching)
     function recreateMap(styleKey, center, zoom, markerPos){
-      const mapDiv = document.getElementById("map");
-      map = new google.maps.Map(mapDiv, {
+      map = new google.maps.Map(document.getElementById("map"), {
         center: center || DEFAULT_CENTER,
         zoom: zoom ?? DEFAULT_ZOOM,
         mapId: MAP_IDS[styleKey],
@@ -189,7 +115,7 @@
         position: markerPos || center || DEFAULT_CENTER,
         map,
         draggable: true,
-        icon: { url: HEART_ICON_URL, scaledSize: new google.maps.Size(34,34) },
+        icon: { url: HEART_ICON_URL, scaledSize: new google.maps.Size(HEART_SCREEN_PX, HEART_SCREEN_PX) },
         title: "Drag me to adjust"
       });
 
@@ -198,7 +124,146 @@
       });
     }
 
-    // Global callback for Google loader
+    // Build a single Static Maps request
+    function buildStaticParams(centerLat, centerLng, zoom, sizeWBase, sizeHBase, mapId){
+      const params = new URLSearchParams({
+        center: `${centerLat},${centerLng}`,
+        zoom: String(clamp(zoom, 0, 21)),
+        size: `${Math.round(sizeWBase)}x${Math.round(sizeHBase)}`,  // base px (<=640)
+        scale: "2",                                                // retina output (2x)
+        format: "png",
+        map_id: mapId,
+        key: API_KEY
+      });
+      return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+    }
+
+    // High-res export: stitch multiple Static Maps tiles into one big canvas
+    async function downloadHiResPNG(){
+      const mapDiv = document.getElementById("map");
+      const viewW = mapDiv.clientWidth;
+      const viewH = mapDiv.clientHeight;
+      const longSideTarget = parseInt(document.getElementById("exportSize").value, 10) || 4096;
+      const aspect = viewH / viewW;
+
+      // Final output px
+      const outW = viewW >= viewH ? longSideTarget : Math.round(longSideTarget / aspect);
+      const outH = viewW >= viewH ? Math.round(longSideTarget * aspect) : longSideTarget;
+
+      // Static Maps constraints
+      const scale = 2;                 // retina
+      const baseMax = 640;             // size param limit per request (base px)
+      const tileOutMax = baseMax * scale; // 1280 px per tile output
+
+      // Number of tiles across each axis
+      const tilesX = Math.ceil(outW / tileOutMax);
+      const tilesY = Math.ceil(outH / tileOutMax);
+
+      // Base-pixel sizes we need overall (for mercator math)
+      const overallBaseW = outW / scale;
+      const overallBaseH = outH / scale;
+
+      // Precompute per-column/per-row base sizes (last tile may be smaller)
+      const colBase = Array.from({length: tilesX}, (_, i) => {
+        const full = (i < tilesX - 1) ? baseMax : (overallBaseW - baseMax * (tilesX - 1));
+        return Math.max(1, Math.round(full));
+      });
+      const rowBase = Array.from({length: tilesY}, (_, j) => {
+        const full = (j < tilesY - 1) ? baseMax : (overallBaseH - baseMax * (tilesY - 1));
+        return Math.max(1, Math.round(full));
+      });
+
+      // Current map view info
+      const z = clamp(map.getZoom(), 0, 21);
+      const c = map.getCenter();
+      const centerX = lng2x(c.lng(), z);
+      const centerY = lat2y(c.lat(), z);
+
+      // Stitch tiles
+      const canvas = document.createElement("canvas");
+      canvas.width = outW; canvas.height = outH;
+      const ctx = canvas.getContext("2d");
+      ctx.imageSmoothingEnabled = true;
+
+      // Load heart image once (CORS-safe)
+      const heartImg = await new Promise((res, rej)=>{
+        const im = new Image();
+        im.crossOrigin = "anonymous";
+        im.onload = ()=> res(im);
+        im.onerror = rej;
+        im.src = HEART_ICON_URL;
+      });
+
+      let yBaseOffset = -overallBaseH/2;
+      let drawY = 0;
+      for (let j = 0; j < tilesY; j++){
+        const hBase = rowBase[j];
+        let xBaseOffset = -overallBaseW/2;
+        let drawX = 0;
+
+        for (let i = 0; i < tilesX; i++){
+          const wBase = colBase[i];
+
+          // Tile center (base px relative to whole image), then to world px
+          const tileCenterX = centerX + (xBaseOffset + wBase/2);
+          const tileCenterY = centerY + (yBaseOffset + hBase/2);
+          const tileCenterLng = x2lng(tileCenterX, z);
+          const tileCenterLat = y2lat(tileCenterY, z);
+
+          const url = buildStaticParams(tileCenterLat, tileCenterLng, z, wBase, hBase, MAP_IDS[currentStyleKey]);
+          const blob = await fetch(url).then(r => {
+            if(!r.ok) throw new Error("Tile fetch failed");
+            return r.blob();
+          });
+
+          // Draw tile
+          const img = await new Promise((res, rej)=>{
+            const im = new Image();
+            im.onload = ()=> res(im);
+            im.onerror = rej;
+            im.src = URL.createObjectURL(blob);
+          });
+
+          const drawW = wBase * scale;      // to output px
+          const drawH = hBase * scale;
+          ctx.drawImage(img, drawX, drawY, drawW, drawH);
+
+          // advance to next column
+          xBaseOffset += wBase;
+          drawX += drawW;
+        }
+        // next row
+        yBaseOffset += hBase;
+        drawY += hBase * scale;
+      }
+
+      // Overlay the same heart PNG, scaled to match what you see on screen
+      const m = marker.getPosition();
+      const mX = lng2x(m.lng(), z);
+      const mY = lat2y(m.lat(), z);
+
+      const dxBase = (mX - centerX);         // base px offset from center
+      const dyBase = (mY - centerY);
+
+      const pxX = canvas.width/2 + dxBase * scale;
+      const pxY = canvas.height/2 + dyBase * scale;
+
+      // Scale heart to preserve the same relative size as on screen
+      const heartScale = canvas.width / viewW;          // how much wider the export is vs. screen
+      const heartW = HEART_SCREEN_PX * heartScale;
+      const heartH = HEART_SCREEN_PX * heartScale;
+
+      // Anchor bottom-center like the live marker
+      ctx.drawImage(heartImg, pxX - heartW/2, pxY - heartH, heartW, heartH);
+
+      // Save
+      const a = document.createElement("a");
+      a.href = canvas.toDataURL("image/png");
+      a.download = `sweet-hooligans-map-${currentStyleKey.toUpperCase()}-${outW}x${outH}.png`;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+
+    // Google callback
     window.initMap = function(){
       geocoder = new google.maps.Geocoder();
       recreateMap(currentStyleKey);
@@ -220,7 +285,7 @@
         });
       });
 
-      // Style tabs — recreate map (most reliable for switching styles)
+      // Style tabs — reliably switch by recreating the map
       document.querySelectorAll(".tab").forEach(btn=>{
         btn.addEventListener("click", ()=>{
           if (btn.classList.contains("active")) return;
@@ -238,10 +303,14 @@
       document.getElementById("zoomOut").addEventListener("click", ()=> map.setZoom(map.getZoom()-1));
       document.getElementById("centerMarker").addEventListener("click", ()=> map.panTo(marker.getPosition()));
 
-      // Download PNG (styled; with heart overlay we draw ourselves)
-      document.getElementById("downloadBtn").addEventListener("click", downloadPNG);
+      // Hi-res download
+      document.getElementById("downloadBtn").addEventListener("click", downloadHiResPNG);
 
-      // Proper sizing on viewport change
+      // Keep zoom indicator correct
+      document.getElementById("zoomLevel").textContent = map.getZoom();
+      map.addListener("zoom_changed", ()=> document.getElementById("zoomLevel").textContent = map.getZoom());
+
+      // Ensure proper sizing on viewport change
       window.addEventListener("resize", ()=> google.maps.event.trigger(map, "resize"));
     };
   </script>
